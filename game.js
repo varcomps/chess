@@ -65,10 +65,12 @@ export function handleData(d) {
 
 function playSlashAnimation() {
     const overlay = document.getElementById('slash-overlay');
-    overlay.classList.add('active');
-    setTimeout(() => {
-        overlay.classList.remove('active');
-    }, 1000);
+    if(overlay) {
+        overlay.classList.add('active');
+        setTimeout(() => {
+            overlay.classList.remove('active');
+        }, 1000);
+    }
 }
 
 export function turnEndLogic() {
@@ -224,7 +226,6 @@ function triggerExpansion() {
     if (gameState.isExpanded) return;
     const newState = Array(16).fill(null).map(() => Array(8).fill(null));
     
-    // SYMMETRIC LOGIC with GLITCH MARKING
     for(let r=0; r<8; r++) {
         for(let c=0; c<8; c++) {
             const p = gameState.board[r][c];
@@ -232,18 +233,16 @@ function triggerExpansion() {
                 const isBuilding = BUILDINGS.includes(p.type) || p.type === 'forge';
 
                 if (r < 4) {
-                    // TOP SECTION
                     if (p.color === 'w' && !isBuilding) {
-                        p.glitched = true; // Mark for shred effect
-                        newState[r + 8][c] = p; // Fall to bottom fog
+                        p.glitched = true; 
+                        newState[r + 8][c] = p; 
                     } else {
                         newState[r][c] = p;
                     }
                 } else {
-                    // BOTTOM SECTION
                     if (p.color === 'b' && !isBuilding) {
-                        p.glitched = true; // Mark for shred effect
-                        newState[r][c] = p; // Stay in top fog
+                        p.glitched = true; 
+                        newState[r][c] = p; 
                     } else {
                         newState[r + 8][c] = p;
                     }
@@ -261,53 +260,71 @@ function triggerExpansion() {
     render(); 
     updateUI();
 
-    // 1. ANIMATE BOARD SLIDE (Expansion)
-    // We select the fog rows (indexes 4 to 11 in the new 16-row board)
-    // and manually set their height to 0, then transition to full height.
+    // 1. АНИМАЦИЯ РАЗЪЕЗДА
     const boardEl = document.getElementById('board');
+    const fogSquares = Array.from(boardEl.querySelectorAll('.fog'));
+    
+    // Сначала "схлопываем" туман (высота 0)
+    // Делаем это с отключенной анимацией, чтобы они мгновенно исчезли
+    fogSquares.forEach(sq => {
+        sq.classList.add('collapsed'); // Применяет height: 0
+        sq.classList.add('fog-waiting'); // opacity: 0
+    });
+
+    // Форсируем перерисовку браузером
+    void boardEl.offsetWidth; 
+
+    // Запускаем разъезд
+    setTimeout(() => {
+        fogSquares.forEach(sq => {
+            sq.classList.remove('collapsed'); // Браузер анимирует height: 0 -> 40px
+        });
+    }, 50);
+
+    // 2. ВОЛНА ПОЯВЛЕНИЯ КЛЕТОК (через 2 секунды)
+    setTimeout(() => {
+        const renderRows = gameState.playerColor === 'b' ? [...Array(16).keys()].reverse() : [...Array(16).keys()];
+        const allSquares = Array.from(boardEl.children);
+        let domIndex = 0;
+        const centerR = 7.5; const centerC = 3.5;
+
+        renderRows.forEach(r => {
+            for(let c=0; c<8; c++) {
+                const sq = allSquares[domIndex];
+                if (sq.classList.contains('fog')) {
+                    const dist = Math.sqrt(Math.pow(r - centerR, 2) + Math.pow(c - centerC, 2));
+                    sq.style.animationDelay = `${dist * 0.08}s`;
+                    sq.classList.add('fog-anim'); // Запуск анимации
+                    sq.classList.remove('fog-waiting');
+                }
+                domIndex++;
+            }
+        });
+    }, 1800); // Чуть раньше конца разъезда
+    
+    // 3. GLITCH
+    const renderRowsForGlitch = gameState.playerColor === 'b' ? [...Array(16).keys()].reverse() : [...Array(16).keys()];
+    let sqIdx = 0;
     const allSquares = Array.from(boardEl.children);
     
-    // Determine start/end indexes for fog rows based on visual perspective
-    // Since board rendering loop depends on player color, we simply search for 'fog' class
-    const fogSquares = allSquares.filter(sq => sq.classList.contains('fog'));
-    
-    // Collapse instantly
-    fogSquares.forEach(sq => {
-        sq.classList.add('expanding-row');
-    });
-
-    // Force reflow
-    void boardEl.offsetWidth;
-
-    // Expand smoothly
-    fogSquares.forEach(sq => {
-        sq.classList.remove('expanding-row');
-    });
-    
-    // 2. APPLY GLITCH SHRED EFFECT
-    // Find pieces marked as glitched and add the CSS class
-    const renderRows = gameState.playerColor === 'b' ? [...Array(16).keys()].reverse() : [...Array(16).keys()];
-    let sqIdx = 0;
-    
-    renderRows.forEach(r => {
+    renderRowsForGlitch.forEach(r => {
         for(let c=0; c<8; c++) {
             const p = gameState.board[r][c];
             if (p && p.glitched) {
                 const pieceEl = allSquares[sqIdx].querySelector('.piece');
                 if (pieceEl) {
                     pieceEl.classList.add('glitch-shred');
-                    // Remove effect after 2s
                     setTimeout(() => {
                         pieceEl.classList.remove('glitch-shred');
-                        p.glitched = false; // Cleanup state
-                    }, 2000);
+                        p.glitched = false; 
+                    }, 2500);
                 }
             }
             sqIdx++;
         }
     });
 
-    setTimeout(() => { gameState.expansionAnimationDone = true; }, 2000);
+    setTimeout(() => { gameState.expansionAnimationDone = true; }, 2500);
 }
 
 export function recruitPawn() {
@@ -404,16 +421,13 @@ export function isValidMove(fr, fc, tr, tc) {
     const isKnight = baseType === 'n';
 
     if (gameState.isExpanded) {
-        // Base logic: 0-3 (Top), 4-11 (Fog), 12-15 (Bottom)
         const startBase = (fr < 4) ? 1 : (fr > 11 ? 2 : 0);
         const endBase = (tr < 4) ? 1 : (tr > 11 ? 2 : 0);
         
-        // Cannot move between bases directly
         if (startBase !== 0 && endBase !== 0 && startBase !== endBase) {
             return false;
         }
 
-        // Fog movement restriction (except Knights)
         if (startFog !== endFog && !isKnight) {
             if (Math.abs(tr - fr) > 1 || Math.abs(tc - fc) > 1) return false;
         }

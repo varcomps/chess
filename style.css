@@ -267,7 +267,8 @@ button:active { transform: scale(0.96); }
 #board { 
     display: grid; 
     grid-template-columns: repeat(var(--cols), var(--sq-size)); 
-    grid-template-rows: repeat(var(--rows), var(--sq-size)); 
+    /* ВАЖНО: auto позволяет строкам сжиматься */
+    grid-template-rows: repeat(var(--rows), auto); 
     position: relative; 
     background: #000;
     border: 4px solid #333; 
@@ -286,17 +287,20 @@ button:active { transform: scale(0.96); }
 #board.expanded { background: transparent; border: none; box-shadow: none; }
 
 .square { 
-    width: var(--sq-size); height: var(--sq-size); 
+    width: var(--sq-size); 
+    /* Плавное изменение высоты для всех клеток */
+    height: var(--sq-size); 
     display: flex; justify-content: center; align-items: center; 
     position: relative; box-sizing: border-box; 
     background-color: #222; 
-    /* Плавный переход для анимации высоты и ширины */
-    transition: width 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+    /* Обязательно overflow:hidden, чтобы при сжатии содержимое не торчало */
+    overflow: hidden; 
+    transition: height 2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .square.light { background-color: var(--sq-light); }
 .square.dark { background-color: var(--sq-dark); }
 
-/* Туман */
+/* --- ТУМАН --- */
 .square.fog {
     background-color: #252525 !important;
     background-image: 
@@ -308,12 +312,30 @@ button:active { transform: scale(0.96); }
     z-index: 1;
 }
 
-/* Для анимации раздвижения: начинаем с 0 высоты */
-.square.expanding-row {
+/* ЭТОТ КЛАСС СЖИМАЕТ ТУМАН В 0 */
+.square.collapsed {
     height: 0 !important;
-    overflow: hidden;
-    border: none;
-    margin: 0;
+    min-height: 0 !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    /* Убираем задержки для схлопывания, но оставляем transition для разворачивания */
+}
+
+/* Подготовка к анимации волны (невидимость) */
+.square.fog-waiting {
+    opacity: 0;
+    transform: scale(0.1);
+}
+
+/* Сама волна появления */
+.square.fog-anim {
+    animation: popInFog 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes popInFog {
+    0% { opacity: 0; transform: scale(0.1); }
+    100% { opacity: 1; transform: scale(1); }
 }
 
 .square.drag-over { 
@@ -326,11 +348,11 @@ button:active { transform: scale(0.96); }
     background-position: center; cursor: grab; z-index: 10; 
     filter: drop-shadow(0 5px 3px rgba(0,0,0,0.6)); 
     position: relative; touch-action: none; pointer-events: auto;
-    transition: transform 0.1s, width 0.3s, height 0.3s;
+    transition: transform 0.1s;
 }
 .piece:active { transform: scale(1.1); }
 
-/* --- GLITCH SHRED EFFECT (РАССЫПАНИЕ НА ПОЛОСКИ) --- */
+/* --- GLITCH SHRED EFFECT --- */
 @keyframes shred-tear {
     0% { clip-path: inset(0 0 0 0); transform: translateX(0); filter: hue-rotate(0deg); opacity: 1; }
     10% { clip-path: inset(20% 0 30% 0); transform: translateX(-5px); opacity: 0.8; }
@@ -346,7 +368,6 @@ button:active { transform: scale(0.96); }
     animation: shred-tear 2.0s cubic-bezier(0.36, 0, 0.66, -0.56) forwards;
 }
 
-/* Добавляем псевдоэлементы для усиления эффекта разрыва */
 .glitch-shred::before, .glitch-shred::after {
     content: '';
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -390,17 +411,18 @@ button:active { transform: scale(0.96); }
 }
 .special-piece .hp-val { height: 100%; background: linear-gradient(90deg, #e74c3c, #c0392b); }
 
-/* --- SLASH EFFECT (АНИМАЦИЯ РАЗРЕЗА) --- */
+/* --- SLASH EFFECT --- */
 #slash-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 5000; display: none;
+    pointer-events: none; z-index: 99999;
+    display: none;
     justify-content: center; align-items: center;
     overflow: hidden;
 }
 #slash-overlay.active { display: flex; }
 
 .slash-line {
-    position: absolute; width: 0; height: 3px;
+    position: absolute; width: 0; height: 4px;
     background: #fff;
     box-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
     animation: slashExpand 0.2s ease-out forwards;
