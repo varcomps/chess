@@ -14,12 +14,13 @@ export const gameState = {
     selectedPiece: null,
     board: Array(8).fill(null).map(() => Array(8).fill(null)),
     
+    // Инициализация нулями
     myResources: { 
         wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, 
-        food: 0, gem: 0, coal: 0, polymer: 0 
+        food: 0, gem: 0, coal: 0, polymer: 0, uranium: 0, chemical: 0
     },
     
     pendingMove: null,
     pendingAcademy: null,
-    lastOpponentMove: null // Для подсветки последнего хода противника
+    lastOpponentMove: null
 };

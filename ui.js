@@ -1,5 +1,5 @@
 import { gameState } from './state.js';
-import { PIECE_URLS, BUILDING_ICONS, BUILDINGS, T2_BUILDINGS, T3_BUILDINGS, FORTRESS_HP, BUILDING_LIMITS } from './constants.js';
+import { PIECE_URLS, BUILDING_ICONS, BUILDINGS, T2_BUILDINGS, T3_BUILDINGS, T4_BUILDINGS, FORTRESS_HP, BUILDING_LIMITS } from './constants.js';
 import { onPiecePointerDown, buildSomething, isNearOwnPiece, movePiece, isValidMove, finishAcademyRecruit, getBuildingCount, getMaxResourceLimit } from './game.js';
 
 export const dragState = {
@@ -24,6 +24,17 @@ export function showTurnBanner(isMyTurn) {
     setTimeout(() => {
         banner.classList.remove('active');
     }, 1500);
+}
+
+// Анимация разреза (Апогей)
+export function playSlashAnimation() {
+    const overlay = document.getElementById('slash-overlay');
+    if(overlay) {
+        overlay.classList.add('active');
+        setTimeout(() => {
+            overlay.classList.remove('active');
+        }, 1000);
+    }
 }
 
 export function isFog(r, c) {
@@ -75,17 +86,25 @@ export function render() {
     
     const rangeR = gameState.playerColor === 'b' ? [...Array(gameState.rows).keys()].reverse() : [...Array(gameState.rows).keys()];
     const rangeC = [...Array(gameState.cols).keys()];
-    const forgeUI = document.getElementById('forge-ui');
-    let forgeActive = false;
     
     rangeR.forEach(r => {
         rangeC.forEach(c => {
             const square = document.createElement('div');
             let isDark = (r + c) % 2 !== 0;
             square.className = `square ${isDark ? 'dark' : 'light'}`;
-            if (isFog(r, c)) square.classList.add('fog');
             
-            // ВАЖНО: Разрешаем отображение ходов даже в BuildMode, если выбрана фигура
+            // Логика Тумана
+            if (isFog(r, c)) {
+                square.classList.add('fog');
+            }
+            
+            // Красная подсветка постройки противника
+            if (gameState.lastOpponentMove && gameState.lastOpponentMove.type === 'build' &&
+                gameState.lastOpponentMove.r === r && gameState.lastOpponentMove.c === c) {
+                square.classList.add('just-built');
+            }
+            
+            // Подсветка ходов
             if (gameState.selectedPiece) {
                 if (isValidMove(gameState.selectedPiece.r, gameState.selectedPiece.c, r, c)) {
                     square.classList.add('legal-move');
@@ -98,6 +117,7 @@ export function render() {
                 }
             }
             
+            // Анимация роста доски
             if (gameState.isExpanded && r >= 4 && r < 12 && !gameState.expansionAnimationDone) { 
                 square.classList.add('growing');
                 const dist = Math.abs(r - 7.5) + Math.abs(c - 3.5);
@@ -107,32 +127,30 @@ export function render() {
             const p = gameState.board[r][c];
             if(p) {
                 const pDiv = document.createElement('div');
-                if (p.type === 'forge') {
-                    pDiv.className = 'special-piece t3-building';
-                    pDiv.innerHTML = BUILDING_ICONS['forge'];
-                    pDiv.style.textShadow = '0 0 15px #e67e22';
-                    square.appendChild(pDiv);
-                }
-                else if (BUILDINGS.includes(p.type)) {
+                
+                if (BUILDINGS.includes(p.type)) {
+                    // ЗДАНИЯ
                     pDiv.className = 'special-piece';
                     if (T2_BUILDINGS.includes(p.type)) pDiv.classList.add('t2-building');
                     if (T3_BUILDINGS.includes(p.type)) pDiv.classList.add('t3-building');
+                    if (T4_BUILDINGS.includes(p.type)) pDiv.classList.add('t4-building');
                     if (p.type === 'house') pDiv.classList.add('settlement');
                     pDiv.innerHTML = BUILDING_ICONS[p.type] || '?';
                     
-                    if (p.type.startsWith('fortress') || p.type === 'barricade') {
-                        const max = FORTRESS_HP[p.type] || 2;
-                        const cur = p.hp !== undefined ? p.hp : max;
-                        const bar = document.createElement('div');
-                        bar.className = 'hp-bar';
-                        const fill = document.createElement('div');
-                        fill.className = 'hp-val';
-                        fill.style.width = (cur / max * 100) + '%';
-                        bar.appendChild(fill);
-                        pDiv.appendChild(bar);
+                    // ЩИТ (HP для стен, Броня для КЦ)
+                    let shieldVal = 0;
+                    if (p.hp !== undefined) shieldVal = p.hp; // Стены
+                    if (p.armor !== undefined) shieldVal = p.armor; // КЦ или другие здания с броней
+                    
+                    if (shieldVal > 0) {
+                        const badge = document.createElement('div');
+                        badge.className = 'shield-badge';
+                        badge.innerText = shieldVal;
+                        pDiv.appendChild(badge);
                     }
                     square.appendChild(pDiv);
                 } else {
+                    // ЮНИТЫ
                     pDiv.className = 'piece';
                     const baseType = p.type.replace('_2', '');
                     pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + baseType]})`;
@@ -145,9 +163,10 @@ export function render() {
                     
                     if (p.movedThisTurn) pDiv.classList.add('exhausted');
 
+                    // ЩИТ ДЛЯ ЮНИТОВ
                     if (p.armor > 0) {
                         const badge = document.createElement('div');
-                        badge.className = 'armor-badge';
+                        badge.className = 'shield-badge';
                         badge.innerText = p.armor;
                         pDiv.appendChild(badge);
                     }
@@ -157,16 +176,10 @@ export function render() {
                     });
                     
                     square.appendChild(pDiv);
-                    if (p.onForge && p.color === gameState.playerColor) {
-                        gameState.selectedPiece = { r, c }; 
-                        forgeActive = true;
-                        square.style.boxShadow = "inset 0 0 20px #e67e22";
-                    }
                 }
             } 
 
             square.addEventListener('pointerdown', (e) => {
-                // Логика перемещения теперь работает и в BuildMode, если выбрана фигура, а не здание из меню
                 if (gameState.selectedPiece) {
                      if (isValidMove(gameState.selectedPiece.r, gameState.selectedPiece.c, r, c)) {
                          movePiece(gameState.selectedPiece.r, gameState.selectedPiece.c, r, c);
@@ -181,12 +194,12 @@ export function render() {
         });
     });
     
-    if (gameState.lastOpponentMove) {
+    // Рисуем стрелку только если это НЕ стройка (стройка имеет красную рамку)
+    if (gameState.lastOpponentMove && gameState.lastOpponentMove.type !== 'build') {
         drawArrow(boardEl, gameState.lastOpponentMove);
     }
 
-    forgeUI.style.display = forgeActive ? 'block' : 'none';
-    
+    // ОБНОВЛЕНИЕ РЕСУРСОВ
     const els = {
         wood: document.getElementById('res-wood-val'),
         stone: document.getElementById('res-stone-val'),
@@ -196,31 +209,34 @@ export function render() {
         food: document.getElementById('res-food-val'),
         gem: document.getElementById('res-gem-val'),
         coal: document.getElementById('res-coal-val'),
-        polymer: document.getElementById('res-poly-val')
+        polymer: document.getElementById('res-poly-val'),
+        uranium: document.getElementById('res-uranium-val'),
+        chemical: document.getElementById('res-chem-val')
     };
 
     const maxRes = getMaxResourceLimit(); 
 
     for (let k in els) {
         if(els[k]) {
-            els[k].innerText = gameState.myResources[k];
+            // FIX: Защита от undefined
+            els[k].innerText = gameState.myResources[k] || 0;
             const limitSpan = els[k].nextSibling;
             if (limitSpan && limitSpan.nodeType === Node.TEXT_NODE) {
                 limitSpan.textContent = "/" + maxRes;
             } else if (limitSpan && limitSpan.tagName === 'SPAN') {
-                 // 
+                 // skip
             } else {
                  if (els[k].nextSibling) els[k].nextSibling.nodeValue = "/" + maxRes;
             }
 
             const parent = els[k].parentElement;
-            if (gameState.myResources[k] >= maxRes) parent.classList.add('limit-reached');
+            if ((gameState.myResources[k] || 0) >= maxRes) parent.classList.add('limit-reached');
             else parent.classList.remove('limit-reached');
         }
     }
 }
 
-// --- УМЕНЬШЕННЫЙ ТРЕУГОЛЬНИК ---
+// --- УМЕНЬШЕННЫЙ ТРЕУГОЛЬНИК (СТРЕЛКА) ---
 function drawArrow(boardEl, move) {
     const sqSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sq-size'));
     const isWhite = gameState.playerColor === 'w';
@@ -283,7 +299,7 @@ function updateBuildingCounters() {
         const type = item.getAttribute('data-type');
         if (!type || type === 'demolish') return;
         
-        let baseType = type.replace('_t2', '').replace('_t3', '');
+        let baseType = type.replace('_t2', '').replace('_t3', '').replace('_t4', '');
         const limit = BUILDING_LIMITS[baseType] || 99;
         const count = getBuildingCount(baseType);
         
@@ -302,12 +318,21 @@ function updateBuildingCounters() {
 export function updateUI() {
     const statusEl = document.getElementById('status');
     const hasHQ = hasSpecial(gameState.playerColor, 'hq');
-    if (gameState.actionsLeft > 0) statusEl.textContent = hasHQ ? `ТВОЙ ХОД (${gameState.actionsLeft} ОД)` : "ТВОЙ ХОД";
+    const hasHQ2 = hasSpecial(gameState.playerColor, 'hq_t2');
+    const hasHQ3 = hasSpecial(gameState.playerColor, 'hq_t3');
+    const hasHQ4 = hasSpecial(gameState.playerColor, 'hq_t4');
+    
+    // Любой КЦ считается
+    const isAlive = hasHQ || hasHQ2 || hasHQ3 || hasHQ4;
+
+    if (gameState.actionsLeft > 0) statusEl.textContent = isAlive ? `ТВОЙ ХОД (${gameState.actionsLeft} ОД)` : "ТВОЙ ХОД";
     else statusEl.textContent = "ХОД ПРОТИВНИКА...";
     
     if (gameState.isBuildMode) document.body.classList.add('build-mode');
     else document.body.classList.remove('build-mode');
-    document.getElementById('btn-build-hq').classList.toggle('hidden-btn', hasHQ);
+    
+    // Скрываем кнопку постройки КЦ, если он уже есть (любого уровня)
+    document.getElementById('btn-build-hq').classList.toggle('hidden-btn', isAlive);
     
     const btnApogee = document.getElementById('btn-apogee');
     if (gameState.isExpanded) {
@@ -338,8 +363,7 @@ export function openAcademyModal(fr, fc, tr, tc, isT2) {
     stdContainer.innerHTML = ''; eliteContainer.innerHTML = '';
     const units = [{t:'n', i:'♞'}, {t:'b', i:'♝'}, {t:'r', i:'♜'}];
 
-    // ПЕРЕИМЕНОВАНИЕ: Стандарт -> TIER 1
-    modal.querySelector('h2').nextElementSibling.querySelector('div').innerText = "TIER 1 (2 БУМАГИ 📜)";
+    modal.querySelector('h2').nextElementSibling.querySelector('div').innerText = "TIER 1 (2 БУМАГИ 📄)";
 
     units.forEach(u => {
         const btn = document.createElement('div');
@@ -351,14 +375,12 @@ export function openAcademyModal(fr, fc, tr, tc, isT2) {
 
     if (isT2) {
         eliteSection.classList.remove('hidden');
-        // ПЕРЕИМЕНОВАНИЕ: Элита -> TIER 2
-        eliteSection.querySelector('div').innerText = "TIER 2 (5 БУМАГИ 📜)";
+        eliteSection.querySelector('div').innerText = "TIER 2 (5 БУМАГИ 📄)";
         
         units.forEach(u => {
             const btn = document.createElement('div');
             btn.className = 'promo-btn upgraded-offer';
             btn.innerHTML = `${u.i}<span class="cost" style="color:gold">5 БУМАГИ</span>`;
-            // Элитный юнит сохранит ранг в game.js
             btn.onclick = () => finishAcademyRecruit(u.t + '_2', 5); 
             eliteContainer.appendChild(btn);
         });

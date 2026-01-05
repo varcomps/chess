@@ -18,19 +18,15 @@
     <div class="slash-flash"></div>
 </div>
 
-<div id="forge-ui">
-    <button onclick="useForge()" style="background: linear-gradient(to right, #e67e22, #d35400);">⚒️ КОВАТЬ (2мет, 2уг)</button>
-</div>
-
 <div id="academy-modal" class="modal-overlay hidden">
     <div class="modal-content">
         <h2 style="color: #f1c40f; margin:0 0 15px 0;">ВЕРБОВКА (1 ОД)</h2>
         <div style="margin-bottom: 15px;">
-            <div style="color:#aaa; font-size:0.8em; margin-bottom:5px; text-transform:uppercase;">TIER 1 (2 Бумаги 📜)</div>
+            <div style="color:#aaa; font-size:0.8em; margin-bottom:5px; text-transform:uppercase;">TIER 1 (2 Бумаги 📄)</div>
             <div class="promo-options" id="acad-std-options"></div>
         </div>
         <div id="acad-elite-section" class="hidden">
-            <div style="color:gold; font-size:0.8em; margin-bottom:5px; text-transform:uppercase;">TIER 2 (5 Бумаги 📜)</div>
+            <div style="color:gold; font-size:0.8em; margin-bottom:5px; text-transform:uppercase;">TIER 2 (5 Бумаги 📄)</div>
             <div class="promo-options" id="acad-elite-options"></div>
         </div>
         <button onclick="closeModal('academy-modal')" style="margin-top:20px; background:#c0392b; width:100%;">ОТМЕНА</button>
@@ -78,19 +74,23 @@
             
             <div id="resource-panel">
                 <div class="res-group t1-res">
-                    <div class="res-item res-wood"><span>🪵</span> <span id="res-wood-val">0</span>/5</div>
-                    <div class="res-item res-stone"><span>🧱</span> <span id="res-stone-val">0</span>/5</div>
-                    <div class="res-item res-food"><span>🍞</span> <span id="res-food-val">0</span>/5</div>
+                    <div class="res-item res-wood"><span>🌲</span> <span id="res-wood-val">0</span>/5</div>
+                    <div class="res-item res-stone"><span>🪨</span> <span id="res-stone-val">0</span>/5</div>
+                    <div class="res-item res-food"><span>🥩</span> <span id="res-food-val">0</span>/5</div>
                 </div>
                 <div class="res-group t2-res">
-                    <div class="res-item res-metal"><span>⛓️</span> <span id="res-metal-val">0</span>/5</div>
-                    <div class="res-item res-cedar"><span>🌲</span> <span id="res-cedar-val">0</span>/5</div>
-                    <div class="res-item res-paper"><span>📜</span> <span id="res-paper-val">0</span>/5</div>
+                    <div class="res-item res-metal"><span>🔩</span> <span id="res-metal-val">0</span>/5</div>
+                    <div class="res-item res-cedar"><span>🍁</span> <span id="res-cedar-val">0</span>/5</div>
+                    <div class="res-item res-paper"><span>📄</span> <span id="res-paper-val">0</span>/5</div>
                 </div>
                 <div class="res-group t3-res">
                     <div class="res-item res-gem"><span>💎</span> <span id="res-gem-val">0</span>/5</div>
                     <div class="res-item res-coal"><span>⚫</span> <span id="res-coal-val">0</span>/5</div>
-                    <div class="res-item res-poly"><span>🧪</span> <span id="res-poly-val">0</span>/5</div>
+                    <div class="res-item res-poly"><span>🧬</span> <span id="res-poly-val">0</span>/5</div>
+                </div>
+                <div class="res-group t4-res">
+                    <div class="res-item res-uranium"><span>☢️</span> <span id="res-uranium-val">0</span>/5</div>
+                    <div class="res-item res-chem"><span>🧪</span> <span id="res-chem-val">0</span>/5</div>
                 </div>
             </div>
 
@@ -109,59 +109,48 @@
         <div class="tab-btn active" id="tab-btn-build" onclick="switchTab('build')">TIER I</div>
         <div class="tab-btn" id="tab-btn-upgrade" onclick="switchTab('upgrade')">TIER II</div>
         <div class="tab-btn" id="tab-btn-elite" onclick="switchTab('elite')">TIER III</div>
+        <div class="tab-btn" id="tab-btn-god" onclick="switchTab('god')">TIER IV</div>
     </div>
     
     <div id="build-list">
         <div class="build-group group-build active">
-            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-desc="Уничтожить здание или своего юнита. Возвращает место." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
-            
-            <div id="btn-build-hq" class="build-item t1-item" data-type="hq" data-label="КОМАНДНЫЙ ЦЕНТР" data-desc="Главная база. Дает +1 ОД в ход (Всего 2). Потеря = Поражение." data-cost="4 Камня, 2 Дерева | 1 ОД" onpointerdown="onSidebarPointerDown(event, 'hq')"><span class="icon">🏰</span></div>
-            
-            <div class="build-item t1-item" data-type="lumber" data-label="ЛЕСОПИЛКА" data-desc="Производит 1 Дерево в конце хода." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber')"><span class="icon">🪓</span></div>
-            
-            <div class="build-item t1-item" data-type="mine" data-label="КАМЕНОЛОМНЯ" data-desc="Производит 1 Камень в конце хода." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'mine')"><span class="icon">⛏️</span></div>
-            
-            <div class="build-item t1-item" data-type="farm" data-label="ПШЕНИЧНАЯ ФЕРМА" data-desc="Производит 1 Еду в конце хода." data-cost="2 Дерева | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'farm')"><span class="icon">🌾</span></div>
-
-            <div class="build-item t1-item" data-type="camp" data-label="ЛАГЕРЬ НАЕМНИКОВ" data-desc="Позволяет нанимать Пешек за 2 Еды." data-cost="3 Дерева, 1 ОД | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'camp')"><span class="icon">⛺</span></div>
-            
-            <div class="build-item t1-item" data-type="fortress" data-label="КАМЕННАЯ СТЕНА" data-desc="Блокирует проход. 2 Здоровья. Можно строить где угодно на своей земле." data-cost="4 Камня | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress')"><span class="icon">🧱</span></div>
-
-            <div class="build-item t1-item" data-type="barricade" data-label="БАРРИКАДА" data-desc="Легкое укрытие. 1 Здоровье. Блокирует проход." data-cost="2 Камня | 1 ОД" onpointerdown="onSidebarPointerDown(event, 'barricade')"><span class="icon">🚧</span></div>
-            
-            <div class="build-item t1-item" data-type="papermill" data-label="БУМАЖНАЯ ФАБРИКА" data-desc="Перерабатывает 1 Дерево в 1 Бумагу." data-cost="2 Камня, 2 Дерева | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'papermill')"><span class="icon">📜</span></div>
+            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-desc="Снести здание." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
+            <div id="btn-build-hq" class="build-item t1-item" data-type="hq" data-label="КОМАНДНЫЙ ЦЕНТР" data-desc="База. +1 ОД (Всего 2)." data-cost="4 Камня, 4 Дерева | 1 ОД" onpointerdown="onSidebarPointerDown(event, 'hq')"><span class="icon">🏰</span></div>
+            <div class="build-item t1-item" data-type="lumber" data-label="ЛЕСОПИЛКА" data-desc="Добыча: 1 Дерево." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber')"><span class="icon">🪓</span></div>
+            <div class="build-item t1-item" data-type="mine" data-label="КАМЕНОЛОМНЯ" data-desc="Добыча: 1 Камень." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'mine')"><span class="icon">⛏️</span></div>
+            <div class="build-item t1-item" data-type="farm" data-label="ФЕРМА" data-desc="Добыча: 1 Еда." data-cost="2 Дерева | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'farm')"><span class="icon">🥩</span></div>
+            <div class="build-item t1-item" data-type="camp" data-label="ЛАГЕРЬ" data-desc="Найм пешек." data-cost="3 Дерева, 1 ОД | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'camp')"><span class="icon">⛺</span></div>
+            <div class="build-item t1-item" data-type="fortress" data-label="СТЕНА" data-desc="2 HP. Блок." data-cost="4 Камня | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress')"><span class="icon">🧱</span></div>
+            <div class="build-item t1-item" data-type="barricade" data-label="БАРРИКАДА" data-desc="1 HP. Укрытие." data-cost="2 Камня | 1 ОД" onpointerdown="onSidebarPointerDown(event, 'barricade')"><span class="icon">🚧</span></div>
+            <div class="build-item t1-item" data-type="papermill" data-label="ФАБРИКА" data-desc="1 Дерево -> 1 Бумага." data-cost="2 Кам, 2 Дер | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'papermill')"><span class="icon">🏭</span></div>
         </div>
 
         <div class="build-group group-upgrade">
-            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-desc="Уничтожить объект." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
-            
-            <div class="build-item t2-item" data-type="academy" data-label="ВОЕННАЯ АКАДЕМИЯ" data-desc="Позволяет превращать Пешек в Офицеров (Конь, Слон, Ладья) за Бумагу." data-cost="4 Дер, 4 Кам, 2 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy')"><span class="icon">🎓</span></div>
-            
-            <div class="build-item t2-item" data-type="lumber_t2" data-label="КЕДРОВАЯ РОЩА" data-desc="АПГРЕЙД ЛЕСОПИЛКИ. Дает Дерево и Редкий Кедр." data-cost="4 Дер, 2 Кам | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t2')"><span class="icon">🌲</span></div>
-            
-            <div class="build-item t2-item" data-type="mine_t2" data-label="ЖЕЛЕЗНЫЙ РУДНИК" data-desc="АПГРЕЙД ШАХТЫ. Дает Камень и Металл." data-cost="4 Кам, 2 Дер | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t2')"><span class="icon">🏗️</span></div>
-            
-            <div class="build-item t2-item" data-type="furnace" data-label="ПЛАВИЛЬНЯ" data-desc="Сжигает 1 Кедр, чтобы получить 1 Уголь." data-cost="3 Кам, 1 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'furnace')"><span class="icon">🔥</span></div>
-            
-            <div class="build-item t2-item" data-type="fortress_t2" data-label="УКРЕПЛЕННЫЙ БАСТИОН" data-desc="АПГРЕЙД СТЕНЫ. 4 Здоровья." data-cost="4 Кам, 2 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t2')"><span class="icon">🛡️</span></div>
-
-            <div class="build-item t2-item" data-type="warehouse" data-label="СКЛАД" data-desc="Увеличивает лимит всех ресурсов на +5." data-cost="2Дер, 2Кедр, 2Кам, 2Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'warehouse')"><span class="icon">📦</span></div>
-            
-            <div class="build-item t2-item" data-type="papermill_t2" data-label="ТИПОГРАФИЯ" data-desc="АПГРЕЙД ФАБРИКИ. Производит 2 бумаги за 1 дерево." data-cost="2 Кедр, 2 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'papermill_t2')"><span class="icon">🖨️</span></div>
+            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-desc="Снести." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
+            <div class="build-item t2-item" data-type="hq_t2" data-label="ШТАБ (T2)" data-desc="АПГРЕЙД КЦ. +2 ОД (Всего 3). +1 Защита." data-cost="4Дер, 4Кам, 4Кедр, 4Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'hq_t2')"><span class="icon">🏯</span></div>
+            <div class="build-item t2-item" data-type="academy" data-label="АКАДЕМИЯ" data-desc="Обучение офицеров." data-cost="4 Дер, 4 Кам, 2 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy')"><span class="icon">🎓</span></div>
+            <div class="build-item t2-item" data-type="lumber_t2" data-label="РОЩА (T2)" data-desc="Добыча: 2 Дер, 1 Кедр." data-cost="4 Дер, 2 Кам | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t2')"><span class="icon">🌲</span></div>
+            <div class="build-item t2-item" data-type="mine_t2" data-label="РУДНИК (T2)" data-desc="Добыча: 2 Кам, 1 Мет." data-cost="4 Кам, 2 Дер | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t2')"><span class="icon">🏗️</span></div>
+            <div class="build-item t2-item" data-type="furnace" data-label="ПЛАВИЛЬНЯ" data-desc="1 Кедр -> 1 Уголь." data-cost="3 Кам, 1 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'furnace')"><span class="icon">🔥</span></div>
+            <div class="build-item t2-item" data-type="fortress_t2" data-label="БАСТИОН" data-desc="4 HP." data-cost="4 Кам, 2 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t2')"><span class="icon">🛡️</span></div>
+            <div class="build-item t2-item" data-type="warehouse" data-label="СКЛАД" data-desc="Лимит +5." data-cost="2Д, 2Кедр, 2К, 2М | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'warehouse')"><span class="icon">📦</span></div>
+            <div class="build-item t2-item" data-type="papermill_t2" data-label="ТИПОГРАФИЯ" data-desc="2 Дерева -> 2 Бумаги." data-cost="2 Кедр, 2 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'papermill_t2')"><span class="icon">🖨️</span></div>
         </div>
 
         <div class="build-group group-elite">
-            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-desc="Уничтожить объект." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
-            
-            <div class="build-item t3-item" data-type="academy_t2" data-label="ЭЛИТНЫЙ УНИВЕРСИТЕТ" data-desc="АПГРЕЙД АКАДЕМИИ. Позволяет нанимать усиленные версии Офицеров." data-cost="2 Пол, 2 Алм, 2 Кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy_t2')"><span class="icon">🏛️</span></div>
-            
-            <div class="build-item t3-item" data-type="lumber_t3" data-label="БИО-ЛАБОРАТОРИЯ" data-desc="АПГРЕЙД РОЩИ. Дает Дерево, Кедр и Полимеры." data-cost="4Д, 2К, 2М, 2Кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t3')"><span class="icon">🧬</span></div>
-            
-            <div class="build-item t3-item" data-type="mine_t3" data-label="АЛМАЗНЫЙ БУР" data-desc="АПГРЕЙД РУДНИКА. Дает Камень, Металл и Алмазы." data-cost="2Д, 4К, 2М, 2Кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t3')"><span class="icon">💎</span></div>
-            
-            <div class="build-item t3-item" data-type="forge" data-label="КУЗНЯ БОГОВ" data-desc="Позволяет накладывать броню на юнитов за Металл и Уголь." data-cost="5Д, 5М, 5Уг, 5Алм | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'forge')"><span class="icon">⚒️</span></div>
+            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-desc="Снести." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
+            <div class="build-item t3-item" data-type="hq_t3" data-label="БУНКЕР (T3)" data-desc="АПГРЕЙД ШТАБА. +3 ОД (Всего 4). +2 Защита." data-cost="4Пол, 4Алм... | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'hq_t3')"><span class="icon">🏟️</span></div>
+            <div class="build-item t3-item" data-type="academy_t2" data-label="УНИВЕРСИТЕТ" data-desc="Элитные войска." data-cost="2 Пол, 2 Алм, 2 Кедр | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'academy_t2')"><span class="icon">🏛️</span></div>
+            <div class="build-item t3-item" data-type="lumber_t3" data-label="БИО-ЛАБ (T3)" data-desc="Добыча: 3 Дер, 2 Кедр, 1 Пол." data-cost="4Д, 4К, 2Кедр, 4М | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t3')"><span class="icon">🧬</span></div>
+            <div class="build-item t3-item" data-type="mine_t3" data-label="БУР (T3)" data-desc="Добыча: 3 Кам, 2 Мет, 1 Алм." data-cost="4К, 4Д, 4Кедр, 2М | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t3')"><span class="icon">💎</span></div>
+            <div class="build-item t3-item" data-type="fortress_t3" data-label="ЦИТАДЕЛЬ" data-desc="8 HP." data-cost="5 Кам, 5 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t3')"><span class="icon">🏯</span></div>
+        </div>
 
-            <div class="build-item t3-item" data-type="fortress_t3" data-label="ОБСИДИАНОВАЯ ЦИТАДЕЛЬ" data-desc="АПГРЕЙД БАСТИОНА. 8 Здоровья. Непробиваемая защита." data-cost="5 Кам, 5 Мет | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'fortress_t3')"><span class="icon">🏯</span></div>
+        <div class="build-group group-god">
+            <div class="build-item demol-item" data-type="demolish" data-label="СНОС" data-desc="Снести." data-cost="1 ОД" onpointerdown="onSidebarPointerDown(event, 'demolish')"><span class="icon">🧨</span></div>
+            <div class="build-item t4-item" data-type="hq_t4" data-label="ОРБИТАЛ (T4)" data-desc="ФИНАЛ КЦ. +4 ОД (Всего 5). +3 Защита." data-cost="4Уран, 4Хим... | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'hq_t4')"><span class="icon">🛰️</span></div>
+            <div class="build-item t4-item" data-type="lumber_t4" data-label="СИНТЕЗАТОР (T4)" data-desc="Добыча: 4Дер, 3Кедр, 2Пол, 1Реактив." data-cost="4Д, 4К, 4Кедр, 4М, 2Алм, 4Пол | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'lumber_t4')"><span class="icon">☢️</span></div>
+            <div class="build-item t4-item" data-type="mine_t4" data-label="ЯДРО (T4)" data-desc="Добыча: 4Кам, 3Мет, 2Алм, 1Уран." data-cost="4К, 4Д, 4Кедр, 4М, 4Алм, 2Пол | 2 ОД" onpointerdown="onSidebarPointerDown(event, 'mine_t4')"><span class="icon">⚛️</span></div>
         </div>
     </div>
 </div>

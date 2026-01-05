@@ -1,7 +1,7 @@
 import { gameState } from './state.js';
 import { BUILDING_COSTS, BUILDING_LIMITS, FORTRESS_HP, BUILDINGS, PIECE_URLS, BUILDING_ICONS } from './constants.js';
 import { sendNetworkMessage } from './network.js';
-import { updateUI, render, recalcBoard, showToast, hasSpecial, isFog, isUpgradedUnit, openAcademyModal, closeModal, showPromotionModal, endGame, initDrag, dragState, showTurnBanner } from './ui.js';
+import { updateUI, render, recalcBoard, showToast, hasSpecial, isFog, isUpgradedUnit, openAcademyModal, closeModal, showPromotionModal, endGame, initDrag, dragState, showTurnBanner, playSlashAnimation } from './ui.js';
 
 export function initBoard() {
     gameState.playerColor = gameState.myColor;
@@ -13,6 +13,7 @@ export function initBoard() {
         gameState.board[6][i] = { type: 'p', color: 'w', moved: false, armor: 0, movedThisTurn: false, rank: 1 };
         gameState.board[7][i] = { type: layout[i], color: 'w', moved: false, armor: 0, movedThisTurn: false, rank: 1 };
     }
+    // ОД обновятся при начале хода
     gameState.actionsLeft = (gameState.playerColor === 'w') ? 1 : 0; 
     recalcBoard(); render();
 }
@@ -22,22 +23,16 @@ export function handleData(d) {
     if (d.type === 'move') {
         const targetPiece = gameState.board[d.to.r][d.to.c];
         const isCapture = targetPiece && (targetPiece.color === gameState.playerColor || BUILDINGS.includes(targetPiece.type));
-        
         gameState.lastOpponentMove = { from: d.from, to: d.to, isCapture: isCapture };
-
         let movingPiece = gameState.board[d.from.r][d.from.c];
         if (!movingPiece) movingPiece = { type: 'p', color: oppColor }; 
-        if (movingPiece && movingPiece.onForge) gameState.board[d.from.r][d.from.c] = { type: 'forge', color: movingPiece.color };
-        else gameState.board[d.from.r][d.from.c] = null;
-        if (d.onForgeEnter) {
-                movingPiece.onForge = true; movingPiece.moved = true;
-                if (d.promoteTo) movingPiece.type = d.promoteTo; 
-                gameState.board[d.to.r][d.to.c] = movingPiece;
-        } else {
-                movingPiece.moved = true;
-                if (d.promoteTo) movingPiece.type = d.promoteTo;
-                gameState.board[d.to.r][d.to.c] = movingPiece;
-        }
+        
+        gameState.board[d.from.r][d.from.c] = null;
+        
+        movingPiece.moved = true;
+        if (d.promoteTo) movingPiece.type = d.promoteTo;
+        gameState.board[d.to.r][d.to.c] = movingPiece;
+        
         if (d.win) endGame(false);
     } else if (d.type === 'attack_hit') {
         if (gameState.board[d.r][d.c]) gameState.board[d.r][d.c].hp = d.hp;
@@ -45,26 +40,33 @@ export function handleData(d) {
     } else if (d.type === 'attack_armor') {
         if (gameState.board[d.r][d.c]) gameState.board[d.r][d.c].armor = d.armor;
         gameState.lastOpponentMove = { from: d.from || {r:d.r, c:d.c}, to: {r:d.r, c:d.c}, isCapture: true };
-    } else if (d.type === 'forge_armor') {
-        if (gameState.board[d.r][d.c]) gameState.board[d.r][d.c].armor = (gameState.board[d.r][d.c].armor || 0) + 1;
     } else if (d.type === 'transform') {
         if (gameState.board[d.from.r][d.from.c] && gameState.board[d.from.r][d.from.c].type === 'p') gameState.board[d.from.r][d.from.c] = null;
-        // Для элитных:
         const isElite = d.newType.endsWith('_2');
         gameState.board[d.to.r][d.to.c] = { type: d.newType, color: oppColor, moved: true, armor: 0, rank: isElite ? 2 : 1 };
     } else if (d.type === 'build') {
         let obj = { type: d.buildType, color: oppColor };
+        // Присваиваем HP или Armor (для HQ)
         if (d.buildType === 'fortress') obj.hp = FORTRESS_HP['fortress'];
         if (d.buildType === 'barricade') obj.hp = FORTRESS_HP['barricade'];
+        if (d.buildType === 'hq_t2') obj.armor = 1;
+        if (d.buildType === 'hq_t3') obj.armor = 2;
+        if (d.buildType === 'hq_t4') obj.armor = 3;
+        
         gameState.board[d.r][d.c] = obj;
+        gameState.lastOpponentMove = { type: 'build', r: d.r, c: d.c };
     } else if (d.type === 'upgrade') {
         if(gameState.board[d.r][d.c]) {
             gameState.board[d.r][d.c].type = d.newType;
             if (d.newType.startsWith('fortress')) gameState.board[d.r][d.c].hp = FORTRESS_HP[d.newType];
+            // Броня для HQ
+            if (d.newType === 'hq_t2') gameState.board[d.r][d.c].armor = 1;
+            if (d.newType === 'hq_t3') gameState.board[d.r][d.c].armor = 2;
+            if (d.newType === 'hq_t4') gameState.board[d.r][d.c].armor = 3;
         }
+        gameState.lastOpponentMove = { type: 'build', r: d.r, c: d.c };
     } else if (d.type === 'demolish') {
-        if (gameState.board[d.r][d.c] && gameState.board[d.r][d.c].onForge) gameState.board[d.r][d.c].onForge = false;
-        else gameState.board[d.r][d.c] = null;
+        gameState.board[d.r][d.c] = null;
     } else if (d.type === 'apogee_trigger') {
         playSlashAnimation();
         setTimeout(() => triggerExpansion(), 600);
@@ -76,22 +78,24 @@ export function handleData(d) {
     } else if (d.type !== 'build' && d.type !== 'upgrade' && d.type !== 'demolish') {
          render();
     }
-    
     render(); updateUI();
 }
 
-function playSlashAnimation() {
-    const overlay = document.getElementById('slash-overlay');
-    if(overlay) {
-        overlay.classList.add('active');
-        setTimeout(() => {
-            overlay.classList.remove('active');
-        }, 1000);
-    }
-}
-
 export function turnEndLogic() {
-    gameState.actionsLeft = hasSpecial(gameState.playerColor, 'hq') ? 2 : 1; 
+    // ЛОГИКА ОД (AP) НА ОСНОВЕ TIER-ов КЦ
+    let baseAP = 1; 
+    const hqT1 = hasSpecial(gameState.playerColor, 'hq');
+    const hqT2 = hasSpecial(gameState.playerColor, 'hq_t2');
+    const hqT3 = hasSpecial(gameState.playerColor, 'hq_t3');
+    const hqT4 = hasSpecial(gameState.playerColor, 'hq_t4');
+
+    if (hqT1) baseAP = 2; // T1 (Base + 1)
+    if (hqT2) baseAP = 3; // T2 (+2)
+    if (hqT3) baseAP = 4; // T3 (+3)
+    if (hqT4) baseAP = 5; // T4 (+4)
+
+    gameState.actionsLeft = baseAP; 
+    
     gameState.board.flat().forEach(p => { 
         if (p) {
             p.freeMoveUsed = false; 
@@ -103,60 +107,95 @@ export function turnEndLogic() {
 
 export function getMaxResourceLimit() {
     const warehouses = getBuildingCount('warehouse');
-    return 5 + (warehouses * 5); // Базовый 5 + 5 за каждый склад
+    return 5 + (warehouses * 5); 
 }
 
 export function collectResources() {
-    let produced = { w:0, s:0, m:0, c:0, p:0, f:0, g:0, cl:0, poly:0 };
     const maxLimit = getMaxResourceLimit();
-
+    let produced = { w:0, s:0, m:0, c:0, p:0, f:0, g:0, cl:0, poly:0, ura:0, ch:0 };
+    
+    // Сбор от добытчиков
     for(let r=0; r<gameState.rows; r++) {
         for(let c=0; c<gameState.cols; c++) {
             const p = gameState.board[r][c];
             if (p && p.color === gameState.playerColor) {
-                if (p.type === 'mine') { if (gameState.myResources.stone < maxLimit) produced.s++; }
-                if (p.type === 'mine_t2') { if (gameState.myResources.stone < maxLimit) produced.s++; if (gameState.myResources.metal < maxLimit) produced.m++; }
-                if (p.type === 'mine_t3') { if (gameState.myResources.stone < maxLimit) produced.s++; if (gameState.myResources.metal < maxLimit) produced.m++; if (gameState.myResources.gem < maxLimit) produced.g++; }
-                if (p.type === 'lumber') { if (gameState.myResources.wood < maxLimit) produced.w++; }
-                if (p.type === 'lumber_t2') { if (gameState.myResources.wood < maxLimit) produced.w++; if (gameState.myResources.cedar < maxLimit) produced.c++; }
-                if (p.type === 'lumber_t3') { if (gameState.myResources.wood < maxLimit) produced.w++; if (gameState.myResources.cedar < maxLimit) produced.c++; if (gameState.myResources.polymer < maxLimit) produced.poly++; }
-                if (p.type === 'furnace') { if (gameState.myResources.cedar > 0 && gameState.myResources.coal < maxLimit) { gameState.myResources.cedar--; produced.cl++; }}
-                if (p.type === 'farm') { if (gameState.myResources.food < maxLimit) produced.f++; }
-                if (p.type === 'papermill') { if (gameState.myResources.wood > 0 && gameState.myResources.paper < maxLimit) { gameState.myResources.wood--; produced.p++; }}
-                if (p.type === 'papermill_t2') { 
-                    if (gameState.myResources.wood > 0 && gameState.myResources.paper < maxLimit) { 
-                        gameState.myResources.wood--; 
-                        produced.p += 2; 
+                // ЛЕСОПИЛКИ
+                if (p.type === 'lumber') { produced.w += 1; }
+                if (p.type === 'lumber_t2') { produced.w += 2; produced.c += 1; }
+                if (p.type === 'lumber_t3') { produced.w += 3; produced.c += 2; produced.poly += 1; }
+                if (p.type === 'lumber_t4') { produced.w += 4; produced.c += 3; produced.poly += 2; produced.ch += 1; }
+                
+                // ШАХТЫ
+                if (p.type === 'mine') { produced.s += 1; }
+                if (p.type === 'mine_t2') { produced.s += 2; produced.m += 1; }
+                if (p.type === 'mine_t3') { produced.s += 3; produced.m += 2; produced.g += 1; }
+                if (p.type === 'mine_t4') { produced.s += 4; produced.m += 3; produced.g += 2; produced.ura += 1; }
+                
+                // ФЕРМА
+                if (p.type === 'farm') { produced.f += 1; }
+            }
+        }
+    }
+
+    // Применение добычи (срезаем по лимиту)
+    const apply = (key, val) => {
+        gameState.myResources[key] = Math.min(maxLimit, (gameState.myResources[key] || 0) + val);
+    };
+    
+    apply('wood', produced.w);
+    apply('stone', produced.s);
+    apply('metal', produced.m);
+    apply('cedar', produced.c);
+    apply('food', produced.f);
+    apply('gem', produced.g);
+    apply('polymer', produced.poly);
+    apply('uranium', produced.ura);
+    apply('chemical', produced.ch);
+
+    // КОНВЕРТЕРЫ (Строгая проверка лимитов: не сжигать, если некуда класть)
+    for(let r=0; r<gameState.rows; r++) {
+        for(let c=0; c<gameState.cols; c++) {
+            const p = gameState.board[r][c];
+            if (p && p.color === gameState.playerColor) {
+                // ПЛАВИЛЬНЯ: 1 Кедр -> 1 Уголь
+                if (p.type === 'furnace') {
+                    if ((gameState.myResources.cedar || 0) >= 1 && (gameState.myResources.coal || 0) < maxLimit) {
+                        gameState.myResources.cedar--;
+                        gameState.myResources.coal = (gameState.myResources.coal || 0) + 1;
+                    }
+                }
+                // БУМАЖНАЯ ФАБРИКА T1: 1 Дерево -> 1 Бумага
+                if (p.type === 'papermill') {
+                    if ((gameState.myResources.wood || 0) >= 1 && (gameState.myResources.paper || 0) < maxLimit) {
+                        gameState.myResources.wood--;
+                        gameState.myResources.paper = (gameState.myResources.paper || 0) + 1;
+                    }
+                }
+                // БУМАЖНАЯ ФАБРИКА T2: 2 Дерева -> 2 Бумаги
+                if (p.type === 'papermill_t2') {
+                    if ((gameState.myResources.wood || 0) >= 2 && (gameState.myResources.paper || 0) <= maxLimit - 2) {
+                        gameState.myResources.wood -= 2;
+                        gameState.myResources.paper = (gameState.myResources.paper || 0) + 2;
                     }
                 }
             }
         }
     }
-    
-    // Применение добытых ресурсов (БЕЗ floating text)
-    if (produced.w > 0) gameState.myResources.wood = Math.min(maxLimit, gameState.myResources.wood + produced.w);
-    if (produced.s > 0) gameState.myResources.stone = Math.min(maxLimit, gameState.myResources.stone + produced.s);
-    if (produced.m > 0) gameState.myResources.metal = Math.min(maxLimit, gameState.myResources.metal + produced.m);
-    if (produced.c > 0) gameState.myResources.cedar = Math.min(maxLimit, gameState.myResources.cedar + produced.c);
-    if (produced.p > 0) gameState.myResources.paper = Math.min(maxLimit, gameState.myResources.paper + produced.p);
-    if (produced.f > 0) gameState.myResources.food = Math.min(maxLimit, gameState.myResources.food + produced.f);
-    if (produced.g > 0) gameState.myResources.gem = Math.min(maxLimit, gameState.myResources.gem + produced.g);
-    if (produced.cl > 0) gameState.myResources.coal = Math.min(maxLimit, gameState.myResources.coal + produced.cl);
-    if (produced.poly > 0) gameState.myResources.polymer = Math.min(maxLimit, gameState.myResources.polymer + produced.poly);
 }
 
 export function buildSomething(r, c, type) {
     let apCost = 2;
+    // Удешевленные здания
     if (type === 'lumber' || type === 'mine' || type === 'demolish' || type === 'hq' || type === 'barricade') apCost = 1;
 
     if (type === 'demolish') {
         const target = gameState.board[r][c];
         if (!target || target.color !== gameState.playerColor) { showToast("НЕЛЬЗЯ СНОСИТЬ."); return; }
-        const isBuilding = BUILDINGS.includes(target.type) || target.type === 'forge';
-        if (!isBuilding && !target.onForge) return showToast("НЕЛЬЗЯ СНОСИТЬ ЮНИТОВ!");
+        const isBuilding = BUILDINGS.includes(target.type);
+        if (!isBuilding) return showToast("НЕЛЬЗЯ СНОСИТЬ ЮНИТОВ!");
         if (gameState.actionsLeft < apCost) { showToast(`НУЖНО ${apCost} ОД.`); return; }
-        if (target.onForge) target.onForge = false;
-        else gameState.board[r][c] = null;
+        
+        gameState.board[r][c] = null;
         gameState.actionsLeft -= apCost;
         sendNetworkMessage({ type: 'demolish', r, c, isLast: (gameState.actionsLeft<=0) });
         if(gameState.actionsLeft <= 0) showTurnBanner(false);
@@ -165,22 +204,28 @@ export function buildSomething(r, c, type) {
     }
 
     const costs = BUILDING_COSTS[type];
-    const isUpgrade = type.endsWith('_t2') || type.endsWith('_t3');
+    const isUpgrade = type.endsWith('_t2') || type.endsWith('_t3') || type.endsWith('_t4');
 
     if (isUpgrade) {
-        let baseType = '';
         let requiredType = '';
+        let baseType = '';
         
-        if (type === 'academy_t2') { 
-            requiredType = 'academy'; 
-        } else if (type === 'papermill_t2') {
-            requiredType = 'papermill';
-        } else if (type.endsWith('_t2')) {
+        // Логика HQ апгрейдов
+        if (type === 'hq_t2') requiredType = 'hq';
+        else if (type === 'hq_t3') requiredType = 'hq_t2';
+        else if (type === 'hq_t4') requiredType = 'hq_t3';
+        // Логика остальных
+        else if (type === 'academy_t2') requiredType = 'academy';
+        else if (type === 'papermill_t2') requiredType = 'papermill';
+        else if (type.endsWith('_t2')) {
             baseType = type.replace('_t2', '');
             requiredType = baseType; 
-        } else {
+        } else if (type.endsWith('_t3')) {
             baseType = type.replace('_t3', '');
             requiredType = baseType + '_t2'; 
+        } else if (type.endsWith('_t4')) {
+            baseType = type.replace('_t4', '');
+            requiredType = baseType + '_t3';
         }
         
         const target = gameState.board[r][c];
@@ -194,6 +239,10 @@ export function buildSomething(r, c, type) {
         payResources(costs);
         gameState.board[r][c].type = type;
         if (type.startsWith('fortress')) gameState.board[r][c].hp = FORTRESS_HP[type];
+        // Установка брони для HQ
+        if (type === 'hq_t2') gameState.board[r][c].armor = 1; 
+        if (type === 'hq_t3') gameState.board[r][c].armor = 2;
+        if (type === 'hq_t4') gameState.board[r][c].armor = 3;
         
         gameState.actionsLeft -= apCost;
         sendNetworkMessage({ type: 'upgrade', r, c, newType: type, isLast: (gameState.actionsLeft<=0) });
@@ -205,7 +254,10 @@ export function buildSomething(r, c, type) {
     if (gameState.board[r][c]) return; 
     if (gameState.actionsLeft < apCost) return showToast(`НУЖНО ${apCost} ОД.`);
     
-    if (BUILDING_LIMITS[type] && getBuildingCount(type) >= BUILDING_LIMITS[type]) {
+    // Проверка лимитов на количество зданий (базовый тип для всех тиров)
+    // Упрощение: используем префиксы.
+    let limitCheckType = type.split('_')[0]; // hq, mine, lumber
+    if (BUILDING_LIMITS[type] && getBuildingCount(limitCheckType) >= BUILDING_LIMITS[type]) {
         showToast(`ЛИМИТ ПОСТРОЕК (${type})!`);
         return;
     }
@@ -229,17 +281,18 @@ export function getBuildingCount(baseType) {
         if (p && p.color === gameState.playerColor) {
             const t = p.type;
             if (t === baseType || t.startsWith(baseType + '_')) count++;
-            if (baseType === 'forge' && p.onForge) count++;
         }
     });
     return count;
 }
 
 function checkResources(cost) {
-    if (gameState.myResources.wood < cost.wood || gameState.myResources.stone < cost.stone || 
-        gameState.myResources.metal < cost.metal || gameState.myResources.cedar < cost.cedar ||
-        gameState.myResources.paper < cost.paper || gameState.myResources.gem < cost.gem || 
-        gameState.myResources.coal < cost.coal || gameState.myResources.polymer < cost.polymer) {
+    const r = gameState.myResources;
+    if ((r.wood||0) < cost.wood || (r.stone||0) < cost.stone || 
+        (r.metal||0) < cost.metal || (r.cedar||0) < cost.cedar ||
+        (r.paper||0) < cost.paper || (r.gem||0) < cost.gem || 
+        (r.coal||0) < cost.coal || (r.polymer||0) < cost.polymer ||
+        (r.uranium||0) < cost.uranium || (r.chemical||0) < cost.chemical) {
         showToast(`НЕ ХВАТАЕТ РЕСУРСОВ!`);
         return false;
     }
@@ -247,14 +300,17 @@ function checkResources(cost) {
 }
 
 function payResources(cost) {
-    gameState.myResources.wood -= cost.wood;
-    gameState.myResources.stone -= cost.stone;
-    gameState.myResources.metal -= cost.metal;
-    gameState.myResources.cedar -= cost.cedar;
-    gameState.myResources.paper -= cost.paper;
-    gameState.myResources.gem -= cost.gem;
-    gameState.myResources.coal -= cost.coal;
-    gameState.myResources.polymer -= cost.polymer;
+    const r = gameState.myResources;
+    r.wood = (r.wood||0) - cost.wood;
+    r.stone = (r.stone||0) - cost.stone;
+    r.metal = (r.metal||0) - cost.metal;
+    r.cedar = (r.cedar||0) - cost.cedar;
+    r.paper = (r.paper||0) - cost.paper;
+    r.gem = (r.gem||0) - cost.gem;
+    r.coal = (r.coal||0) - cost.coal;
+    r.polymer = (r.polymer||0) - cost.polymer;
+    r.uranium = (r.uranium||0) - cost.uranium;
+    r.chemical = (r.chemical||0) - cost.chemical;
 }
 
 export function activateApogee() {
@@ -272,7 +328,7 @@ function triggerExpansion() {
         for(let c=0; c<8; c++) {
             const p = gameState.board[r][c];
             if (p) {
-                const isBuilding = BUILDINGS.includes(p.type) || p.type === 'forge';
+                const isBuilding = BUILDINGS.includes(p.type);
 
                 if (r < 4) {
                     if (p.color === 'w' && !isBuilding) {
@@ -364,7 +420,7 @@ function triggerExpansion() {
 
 export function recruitPawn() {
     if (gameState.actionsLeft < 1) { showToast("НУЖНО 1 ОД!"); return; }
-    if (gameState.myResources.food < 2) { showToast("НУЖНО 2 ЕДЫ!"); return; }
+    if ((gameState.myResources.food||0) < 2) { showToast("НУЖНО 2 ЕДЫ!"); return; }
     
     let campR = -1, campC = -1;
     for(let r=0; r<gameState.rows; r++) {
@@ -393,24 +449,9 @@ export function recruitPawn() {
     updateUI(); render();
 }
 
-export function useForge() {
-    if (!gameState.selectedPiece) return;
-    const p = gameState.board[gameState.selectedPiece.r][gameState.selectedPiece.c];
-    if (!p || !p.onForge) return;
-    if (gameState.myResources.metal < 2 || gameState.myResources.coal < 2) {
-        showToast("НУЖНО 2 МЕТАЛЛА И 2 УГЛЯ!");
-        return;
-    }
-    gameState.myResources.metal -= 2;
-    gameState.myResources.coal -= 2;
-    p.armor = (p.armor || 0) + 1;
-    sendNetworkMessage({ type: 'forge_armor', r: gameState.selectedPiece.r, c: gameState.selectedPiece.c });
-    render(); updateUI();
-}
-
 export function finishAcademyRecruit(newType, paperCost) {
     if (gameState.actionsLeft < 1) { showToast("НЕТ ОД ДЛЯ ОБУЧЕНИЯ!"); return; }
-    if (gameState.myResources.paper < paperCost) { showToast(`НЕ ХВАТАЕТ БУМАГИ (НУЖНО ${paperCost})!`); return; }
+    if ((gameState.myResources.paper||0) < paperCost) { showToast(`НЕ ХВАТАЕТ БУМАГИ (НУЖНО ${paperCost})!`); return; }
     
     const { from, acad } = gameState.pendingAcademy;
     const dir = gameState.playerColor === 'w' ? -1 : 1;
@@ -427,7 +468,6 @@ export function finishAcademyRecruit(newType, paperCost) {
 
     gameState.board[from.r][from.c] = null;
     
-    // ПРИСВАИВАЕМ РАНГ. Если юнит элитный (_2), он получает ранг 2 навсегда.
     const isElite = newType.endsWith('_2');
     const unitRank = isElite ? 2 : 1;
 
@@ -438,7 +478,7 @@ export function finishAcademyRecruit(newType, paperCost) {
         freeMoveUsed: false, 
         armor: 0, 
         movedThisTurn: true,
-        rank: unitRank // <-- Persistent Elite Status
+        rank: unitRank
     };
 
     gameState.actionsLeft--; 
@@ -487,7 +527,6 @@ export function isValidMove(fr, fc, tr, tc) {
         }
     }
 
-    if (dest && dest.type === 'forge') return true;
     if (dest && dest.color === p.color) {
         if ((dest.type === 'academy' || dest.type === 'academy_t2') && p.type === 'p') return true; 
         return false; 
@@ -539,30 +578,13 @@ export function movePiece(fr, fc, tr, tc) {
         return;
     }
 
-    if (dest && dest.type === 'forge') {
-        if (dest.color === piece.color || !dest.color) { 
-            if (piece.onForge) gameState.board[fr][fc] = { type: 'forge', color: piece.color };
-            else gameState.board[fr][fc] = null;
-            piece.onForge = true; piece.moved = true; piece.movedThisTurn = true;
-            gameState.board[tr][tc] = piece;
-            gameState.actionsLeft--;
-            sendNetworkMessage({ type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, isLast: (gameState.actionsLeft<=0), onForgeEnter: true });
-            if(gameState.actionsLeft <= 0) showTurnBanner(false);
-            gameState.selectedPiece = null;
-            updateUI(); render();
-            return;
-        }
-    }
-
-    if (piece.onForge) { gameState.board[fr][fc] = { type: 'forge', color: piece.color }; piece.onForge = false; }
-    else { gameState.board[fr][fc] = null; }
+    gameState.board[fr][fc] = null;
 
     if (dest && dest.color !== piece.color) {
         if (dest.type.startsWith('fortress') || dest.type === 'barricade') {
             if (dest.hp > 1) {
                 dest.hp--;
-                if (gameState.board[fr][fc] && gameState.board[fr][fc].type === 'forge') { gameState.board[fr][fc] = piece; piece.onForge = true; }
-                else { gameState.board[fr][fc] = piece; }
+                gameState.board[fr][fc] = piece;
                 piece.movedThisTurn = true; 
                 gameState.actionsLeft--;
                 sendNetworkMessage({ type: 'attack_hit', r: tr, c: tc, hp: dest.hp, isLast: (gameState.actionsLeft<=0) });
@@ -574,8 +596,7 @@ export function movePiece(fr, fc, tr, tc) {
         }
         if (dest.armor > 0) {
             dest.armor--;
-            if (gameState.board[fr][fc] && gameState.board[fr][fc].type === 'forge') { gameState.board[fr][fc] = piece; piece.onForge = true; }
-            else { gameState.board[fr][fc] = piece; }
+            gameState.board[fr][fc] = piece;
             piece.movedThisTurn = true;
             gameState.actionsLeft--;
             sendNetworkMessage({ type: 'attack_armor', r: tr, c: tc, armor: dest.armor, isLast: (gameState.actionsLeft<=0) });
@@ -619,7 +640,7 @@ export function movePiece(fr, fc, tr, tc) {
 }
 
 export function isNearOwnPiece(r, c, type) {
-    if (gameState.board[r][c] && gameState.board[r][c].color === gameState.playerColor && (type.endsWith('_t2') || type.endsWith('_t3') || type === 'academy')) return true;
+    if (gameState.board[r][c] && gameState.board[r][c].color === gameState.playerColor && (type.endsWith('_t2') || type.endsWith('_t3') || type.endsWith('_t4') || type === 'academy')) return true;
     if (gameState.board[r][c]) return false; 
     
     const targetIsFog = isFog(r, c);
@@ -630,7 +651,7 @@ export function isNearOwnPiece(r, c, type) {
                 const neighbor = gameState.board[nr][nc];
                 if (neighbor && neighbor.color === gameState.playerColor) {
                     
-                    const neighborIsBuilding = BUILDINGS.includes(neighbor.type) || neighbor.type === 'forge';
+                    const neighborIsBuilding = BUILDINGS.includes(neighbor.type);
 
                     if (type.startsWith('fortress') || type === 'barricade') {
                          if (targetIsFog === isFog(nr, nc)) return true;
@@ -649,12 +670,8 @@ export function isNearOwnPiece(r, c, type) {
 
 export function onPiecePointerDown(e, fr, fc) {
     if (gameState.gameOver || !gameState.currentRoom || gameState.actionsLeft <= 0) {
-         if (gameState.board[fr][fc] && gameState.board[fr][fc].onForge && gameState.board[fr][fc].color === gameState.playerColor) {
-             gameState.selectedPiece = {r: fr, c: fc}; render(); 
-         }
          return;
     }
-    // УБРАНА ПРОВЕРКА gameState.isBuildMode, чтобы можно было кликать и двигать фигуры
     
     if (gameState.board[fr][fc] && gameState.board[fr][fc].type === 'camp') return;
     const p = gameState.board[fr][fc];
@@ -678,5 +695,5 @@ export function onSidebarPointerDown(e, type) {
     if (gameState.gameOver || !gameState.currentRoom || gameState.actionsLeft <= 0 || !gameState.isBuildMode) return;
     dragState.isBuildingDrag = true;
     dragState.from = { type: type };
-    initDrag(e, null, BUILDING_ICONS[type] || BUILDING_ICONS[type.replace('_t2','').replace('_t3','')]);
+    initDrag(e, null, BUILDING_ICONS[type] || BUILDING_ICONS[type.replace('_t2','').replace('_t3','').replace('_t4','')]);
 }
