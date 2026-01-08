@@ -1,6 +1,6 @@
 import { gameState } from './state.js';
 import { PIECE_URLS, BUILDING_ICONS, BUILDINGS, T2_BUILDINGS, T3_BUILDINGS, T4_BUILDINGS, FORTRESS_HP, BUILDING_LIMITS } from './constants.js';
-import { onPiecePointerDown, buildSomething, isNearOwnPiece, movePiece, isValidMove, finishAcademyRecruit, getBuildingCount, getMaxResourceLimit, recruitPawn, finishWorkshopBuild, processProduction, activateMageTowerMode, finishTorpedoBuild, passTurn } from './game.js';
+import { onPiecePointerDown, buildSomething, isNearOwnPiece, movePiece, isValidMove, finishAcademyRecruit, getBuildingCount, getMaxResourceLimit, recruitPawn, finishWorkshopBuild, processProduction, activateMageTowerMode, finishTorpedoBuild, passTurn, updateFogOfWar } from './game.js';
 
 export const dragState = {
     started: false, cloneEl: null, from: null, isBuildingDrag: false,
@@ -142,9 +142,11 @@ export function recalcBoard() {
     if (gameState.isBuildMode) safeTop = 150; 
     if (window.innerWidth <= 768) {
         if (gameState.isBuildMode) {
-            const menuH = buildMenu ? buildMenu.offsetHeight : (window.innerHeight * 0.38); 
-            safeBottom = menuH + 10; 
-        } else { safeBottom = 60; }
+            // safeBottom теперь меньше, т.к. меню фиксировано
+            safeBottom = 200; 
+        } else { safeBottom = 20; }
+        // safeTop на мобильных перенесен наверх, резервируем место под ресурсы
+        safeTop = 110; 
     }
     const availableHeight = window.innerHeight - safeTop - safeBottom;
     const availableWidth = window.innerWidth - 10;
@@ -164,6 +166,9 @@ export function render() {
     const boardEl = document.getElementById('board');
     if(!boardEl) return;
     
+    // Гарантируем наличие маски
+    if (!gameState.visibilityMask) updateFogOfWar();
+
     boardEl.innerHTML = '';
     document.documentElement.style.setProperty('--rows', gameState.rows);
     document.documentElement.style.setProperty('--cols', gameState.cols);
@@ -179,20 +184,29 @@ export function render() {
             square.className = `square ${isDark ? 'dark' : 'light'}`;
             if (isFog(r, c)) { square.classList.add('fog'); square.classList.add(isDark ? 'dark' : 'light'); }
             
+            // --- ТУМАН ВОЙНЫ ---
+            const isVisible = gameState.visibilityMask[r][c];
+            if (!isVisible) {
+                square.classList.add('shroud');
+            }
+            // -------------------
+
             if (gameState.lastOpponentMove && gameState.lastOpponentMove.type === 'build' &&
-                gameState.lastOpponentMove.r === r && gameState.lastOpponentMove.c === c) {
+                gameState.lastOpponentMove.r === r && gameState.lastOpponentMove.c === c && isVisible) {
                 square.classList.add('just-built');
             }
             
             if (gameState.isTargetingMode && gameState.targetingSource) {
                 const dist = Math.max(Math.abs(gameState.targetingSource.r - r), Math.abs(gameState.targetingSource.c - c));
-                if (dist <= 2) square.style.boxShadow = "inset 0 0 20px rgba(155, 89, 182, 0.5)";
+                if (dist <= 2 && isVisible) square.style.boxShadow = "inset 0 0 20px rgba(155, 89, 182, 0.5)";
             }
 
             if (gameState.selectedPiece) {
                 if (isValidMove(gameState.selectedPiece.r, gameState.selectedPiece.c, r, c)) {
+                    // Подсветка хода даже в туман (интуиция/разведка)
                     square.classList.add('legal-move');
-                    if (gameState.board[r][c] && gameState.board[r][c].color !== gameState.playerColor) {
+                    // Показываем, что там враг, ТОЛЬКО если клетка видима
+                    if (isVisible && gameState.board[r][c] && gameState.board[r][c].color !== gameState.playerColor) {
                         square.classList.add('enemy-target');
                     }
                 }
@@ -207,59 +221,62 @@ export function render() {
 
             const p = gameState.board[r][c];
             if(p) {
-                const pDiv = document.createElement('div');
-                
-                if (BUILDINGS.includes(p.type)) {
-                    pDiv.className = 'special-piece';
-                    if (T2_BUILDINGS.includes(p.type)) pDiv.classList.add('t2-building');
-                    if (T3_BUILDINGS.includes(p.type)) pDiv.classList.add('t3-building');
-                    if (T4_BUILDINGS.includes(p.type)) pDiv.classList.add('t4-building');
-                    if (p.type === 'house') pDiv.classList.add('settlement');
-                    pDiv.innerHTML = BUILDING_ICONS[p.type] || '?';
+                // Рендерим фигуру, если она моя ИЛИ если клетка видима
+                if (p.color === gameState.playerColor || isVisible) {
+                    const pDiv = document.createElement('div');
                     
-                    let shieldVal = 0;
-                    if (p.hp !== undefined) shieldVal = p.hp;
-                    if (p.armor !== undefined) shieldVal = p.armor;
-                    if (shieldVal > 0) {
-                        const badge = document.createElement('div');
-                        badge.className = 'shield-badge';
-                        badge.innerText = shieldVal;
-                        pDiv.appendChild(badge);
-                    }
-                    
-                    pDiv.addEventListener('pointerdown', (e) => { 
-                        e.stopPropagation(); 
-                        onPiecePointerDown(e, r, c); 
-                    });
+                    if (BUILDINGS.includes(p.type)) {
+                        pDiv.className = 'special-piece';
+                        if (T2_BUILDINGS.includes(p.type)) pDiv.classList.add('t2-building');
+                        if (T3_BUILDINGS.includes(p.type)) pDiv.classList.add('t3-building');
+                        if (T4_BUILDINGS.includes(p.type)) pDiv.classList.add('t4-building');
+                        if (p.type === 'house') pDiv.classList.add('settlement');
+                        pDiv.innerHTML = BUILDING_ICONS[p.type] || '?';
+                        
+                        let shieldVal = 0;
+                        if (p.hp !== undefined) shieldVal = p.hp;
+                        if (p.armor !== undefined) shieldVal = p.armor;
+                        if (shieldVal > 0) {
+                            const badge = document.createElement('div');
+                            badge.className = 'shield-badge';
+                            badge.innerText = shieldVal;
+                            pDiv.appendChild(badge);
+                        }
+                        
+                        pDiv.addEventListener('pointerdown', (e) => { 
+                            e.stopPropagation(); 
+                            onPiecePointerDown(e, r, c); 
+                        });
 
-                    square.appendChild(pDiv);
-                } 
-                else {
-                    pDiv.className = 'piece';
-                    const baseType = p.type.replace('_2', '');
-                    if (p.type === 'ram') {
-                        pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + 'ram']})`;
-                        pDiv.style.filter = "drop-shadow(2px 4px 6px rgba(0,0,0,0.5))"; 
-                    } else if (p.type === 'torpedo') {
-                        pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + 'torpedo']})`;
-                        pDiv.style.filter = "drop-shadow(0 0 5px red)";
-                        const rot = p.color === 'w' ? '0deg' : '180deg';
-                        pDiv.style.transform = `rotate(${rot})`;
-                    } else {
-                        pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + baseType]})`;
+                        square.appendChild(pDiv);
+                    } 
+                    else {
+                        pDiv.className = 'piece';
+                        const baseType = p.type.replace('_2', '');
+                        if (p.type === 'ram') {
+                            pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + 'ram']})`;
+                            pDiv.style.filter = "drop-shadow(2px 4px 6px rgba(0,0,0,0.5))"; 
+                        } else if (p.type === 'torpedo') {
+                            pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + 'torpedo']})`;
+                            pDiv.style.filter = "drop-shadow(0 0 5px red)";
+                            const rot = p.color === 'w' ? '0deg' : '180deg';
+                            pDiv.style.transform = `rotate(${rot})`;
+                        } else {
+                            pDiv.style.backgroundImage = `url(${PIECE_URLS[p.color + baseType]})`;
+                        }
+                        
+                        if (isUpgradedUnit(p)) { pDiv.classList.add('upgraded'); pDiv.classList.add('elite-unit'); }
+                        if (p.movedThisTurn) pDiv.classList.add('exhausted');
+                        if (p.armor > 0) {
+                            const badge = document.createElement('div');
+                            badge.className = 'shield-badge';
+                            badge.innerText = p.armor;
+                            if (p.type === 'torpedo') badge.style.transform = p.color === 'w' ? '' : 'rotate(180deg)';
+                            pDiv.appendChild(badge);
+                        }
+                        pDiv.addEventListener('pointerdown', (e) => { e.stopPropagation(); onPiecePointerDown(e, r, c); });
+                        square.appendChild(pDiv);
                     }
-                    
-                    if (isUpgradedUnit(p)) { pDiv.classList.add('upgraded'); pDiv.classList.add('elite-unit'); }
-                    if (p.movedThisTurn) pDiv.classList.add('exhausted');
-                    if (p.armor > 0) {
-                        const badge = document.createElement('div');
-                        badge.className = 'shield-badge';
-                        badge.innerText = p.armor;
-                        if (p.type === 'torpedo') badge.style.transform = p.color === 'w' ? '' : 'rotate(180deg)';
-                        pDiv.appendChild(badge);
-                    }
-                    pDiv.addEventListener('pointerdown', (e) => { e.stopPropagation(); onPiecePointerDown(e, r, c); });
-                    square.appendChild(pDiv);
                 }
             } 
 
@@ -311,7 +328,7 @@ function updateResourcePanel() {
     }
 }
 function drawArrow(boardEl, move) {
-    if (!move.from || !move.to) return; // Защита от отсутствия координат
+    if (!move.from || !move.to) return; 
 
     const sqSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sq-size'));
     const isWhite = gameState.playerColor === 'w';
@@ -386,10 +403,8 @@ export function updateUI() {
         else btnApogee.style.display = gameState.isBuildMode ? 'block' : 'none';
     }
     
-    // ИСПРАВЛЕНА ЛОГИКА КНОПКИ ПРОПУСКА ХОДА
     const passBtn = document.getElementById('btn-pass-turn');
     if (passBtn) {
-        // Показываем кнопку, если сейчас мой ход, я жив и игра не закончена
         const isMyTurn = (gameState.playerColor === gameState.myColor);
         if (isMyTurn && !gameState.gameOver && isAlive) {
             passBtn.style.display = 'block';
@@ -465,7 +480,6 @@ export function openTorpedoModal(fr, fc, tr, tc) {
     const modal = document.getElementById('torpedo-modal');
     const container = modal.querySelector('.promo-options');
     
-    // Показываем ресурсы: Металл и Уран
     const statsHTML = renderModalStats([
         { key: 'metal', icon: '🔩' },
         { key: 'uranium', icon: '☢️' }
@@ -551,7 +565,6 @@ export function openProductionModal(type) {
     const container = document.getElementById('prod-options');
     const title = document.getElementById('prod-title');
     container.innerHTML = '';
-    const maxLimit = getMaxResourceLimit();
 
     if (type === 'jeweler') {
         title.innerText = "ЮВЕЛИРНАЯ";

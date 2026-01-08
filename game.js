@@ -4,8 +4,10 @@ import { sendNetworkMessage } from './network.js';
 import { updateUI, render, recalcBoard, showToast, hasSpecial, isFog, isUpgradedUnit, openAcademyModal, closeModal, showPromotionModal, endGame, initDrag, dragState, showTurnBanner, playSlashAnimation, openCampModal, openWorkshopModal, openProductionModal, openMageTowerModal, playMagicShot, openTorpedoModal } from './ui.js';
 
 export function initBoard() {
-    gameState.playerColor = gameState.myColor;
+    gameState.playerColor = gameState.myColor; // При старте мой ход (если я белые) или не мой (если черные) - логика в network.js
     gameState.board = Array(8).fill(null).map(() => Array(8).fill(null));
+    gameState.visibilityMask = Array(8).fill(null).map(() => Array(8).fill(true));
+
     const layout = ['r','n','b','q','k','b','n','r'];
     for(let i=0; i<8; i++) {
         gameState.board[0][i] = { type: layout[i], color: 'b', moved: false, armor: 0, movedThisTurn: false, rank: 1 };
@@ -13,18 +15,135 @@ export function initBoard() {
         gameState.board[6][i] = { type: 'p', color: 'w', moved: false, armor: 0, movedThisTurn: false, rank: 1 };
         gameState.board[7][i] = { type: layout[i], color: 'w', moved: false, armor: 0, movedThisTurn: false, rank: 1 };
     }
-    gameState.actionsLeft = (gameState.playerColor === 'w') ? 1 : 0; 
+    
+    // Если я белые - мой ход (w), если черные - ход белых (w)
+    gameState.playerColor = 'w'; 
+    gameState.actionsLeft = 1; 
+    
+    updateFogOfWar();
     recalcBoard(); render();
 }
 
+// --- ЛОГИКА ТУМАНА ВОЙНЫ (ИСПРАВЛЕНА) ---
+export function updateFogOfWar() {
+    const rows = gameState.rows;
+    const cols = gameState.cols;
+    const myColor = gameState.myColor; // Видимость считаем всегда для СЕБЯ
+
+    const mask = Array(rows).fill(null).map(() => Array(cols).fill(false));
+
+    // 1. Базы всегда видны (если включен расширенный режим)
+    for(let r=0; r<rows; r++) {
+        for(let c=0; c<cols; c++) {
+            if (!gameState.isExpanded) {
+                 mask[r][c] = true; // В обычном режиме видно все
+            } else {
+                // Базы (0-3 и 12-15) всегда видны, туман только посередине (4-11)
+                if (r < 4 || r > 11) mask[r][c] = true;
+            }
+        }
+    }
+
+    // 2. Расчет зрения от фигур
+    for(let r=0; r<rows; r++) {
+        for(let c=0; c<cols; c++) {
+            const p = gameState.board[r][c];
+            if (p && p.color === myColor) {
+                castVision(r, c, p, mask, rows, cols);
+            }
+        }
+    }
+
+    gameState.visibilityMask = mask;
+}
+
+function castVision(r, c, piece, mask, rows, cols) {
+    mask[r][c] = true; 
+
+    const type = piece.type.replace('_2', '').replace('_t2', '').replace('_t3', '').replace('_t4', '');
+    const isWhite = piece.color === 'w';
+    const forward = isWhite ? -1 : 1;
+    const isValid = (rr, cc) => (rr >= 0 && rr < rows && cc >= 0 && cc < cols);
+    
+    // Проверка: находится ли источник зрения ВНУТРИ тумана?
+    const inFogZone = (row) => (gameState.isExpanded && row >= 4 && row <= 11);
+    const sourceInFog = inFogZone(r);
+
+    const castRay = (dr, dc) => {
+        let currR = r + dr;
+        let currC = c + dc;
+        while(isValid(currR, currC)) {
+            mask[currR][currC] = true;
+            
+            // Логика "Непрозрачного тумана":
+            // Если мы стоим снаружи, а луч вошел в туман -> мы видим эту первую клетку тумана, но не дальше.
+            if (!sourceInFog && inFogZone(currR)) break;
+
+            if (gameState.board[currR][currC]) break; // Блок обзора препятствием
+            currR += dr;
+            currC += dc;
+        }
+    };
+
+    if (BUILDINGS.includes(type) || type === 'barricade') {
+        let range = 1;
+        if (['hq', 'magetower', 'fortress', 'torpedo_tower', 'academy'].includes(type) || piece.type.includes('_t')) range = 2;
+        
+        for(let i=-range; i<=range; i++) {
+            for(let j=-range; j<=range; j++) {
+                if(isValid(r+i, c+j)) mask[r+i][c+j] = true;
+            }
+        }
+        return;
+    }
+
+    switch (type) {
+        case 'p': 
+            if(isValid(r + forward, c)) mask[r + forward][c] = true;
+            if(isValid(r + forward, c - 1)) mask[r + forward][c - 1] = true;
+            if(isValid(r + forward, c + 1)) mask[r + forward][c + 1] = true;
+            if (!piece.moved && isValid(r + forward * 2, c) && !gameState.board[r+forward][c]) {
+                // Если пешка прыгает на 2 клетки в туман - она видит, куда прыгает
+                mask[r + forward * 2][c] = true;
+            }
+            break;
+        case 'r': case 'ram': case 'torpedo':
+            castRay(1, 0); castRay(-1, 0); castRay(0, 1); castRay(0, -1);
+            break;
+        case 'b':
+            castRay(1, 1); castRay(1, -1); castRay(-1, 1); castRay(-1, -1);
+            break;
+        case 'n': 
+            const jumps = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+            jumps.forEach(([dr, dc]) => {
+                if(isValid(r+dr, c+dc)) mask[r+dr][c+dc] = true;
+            });
+            for(let i=-1; i<=1; i++) for(let j=-1; j<=1; j++) if(isValid(r+i, c+j)) mask[r+i][c+j] = true;
+            break;
+        case 'q':
+            castRay(1, 0); castRay(-1, 0); castRay(0, 1); castRay(0, -1);
+            castRay(1, 1); castRay(1, -1); castRay(-1, 1); castRay(-1, -1);
+            break;
+        case 'k':
+            for(let i=-1; i<=1; i++) for(let j=-1; j<=1; j++) if(isValid(r+i, c+j)) mask[r+i][c+j] = true;
+            break;
+    }
+}
+
 export function handleData(d) {
-    const oppColor = (gameState.playerColor === 'w' ? 'b' : 'w');
+    const oppColor = (gameState.myColor === 'w' ? 'b' : 'w'); // Противник относительно МЕНЯ
+    
+    // Если пришел ход, значит сейчас ходил тот, чей цвет в d.senderColor (или логически)
+    // Но проще: если d.isLast === true, значит ход переходит КО МНЕ.
+    
     if (d.type === 'move') {
         const targetPiece = gameState.board[d.to.r][d.to.c];
-        const isCapture = targetPiece && (targetPiece.color === gameState.playerColor || BUILDINGS.includes(targetPiece.type));
+        const isCapture = targetPiece && (targetPiece.color === gameState.myColor || BUILDINGS.includes(targetPiece.type));
         gameState.lastOpponentMove = { from: d.from, to: d.to, isCapture: isCapture };
+        
         let movingPiece = gameState.board[d.from.r][d.from.c];
         if (!movingPiece) movingPiece = { type: 'p', color: oppColor }; 
+        
         gameState.board[d.from.r][d.from.c] = null;
         movingPiece.moved = true;
         if (d.promoteTo) movingPiece.type = d.promoteTo;
@@ -43,16 +162,11 @@ export function handleData(d) {
             else if(target.hp > 0) target.hp = Math.max(0, target.hp - 1);
             else gameState.board[d.r][d.c] = null; 
         }
-        if (d.from) {
-            playMagicShot(d.from.r, d.from.c, d.r, d.c);
-        } else {
-            playSlashAnimation();
-        }
+        if (d.from) playMagicShot(d.from.r, d.from.c, d.r, d.c);
+        else playSlashAnimation();
         gameState.lastOpponentMove = { from: d.from, to: {r:d.r, c:d.c}, isCapture: true };
     } else if (d.type === 'transform') {
-        if (d.from && gameState.board[d.from.r][d.from.c]) {
-             gameState.board[d.from.r][d.from.c] = null;
-        }
+        if (d.from && gameState.board[d.from.r][d.from.c]) gameState.board[d.from.r][d.from.c] = null;
         const isElite = d.newType.endsWith('_2'); 
         let newObj = { type: d.newType, color: oppColor, moved: true, armor: 0, rank: isElite ? 2 : 1 };
         if (d.newType === 'ram') newObj.armor = 1;
@@ -91,7 +205,11 @@ export function handleData(d) {
         showToast("ПРОТИВНИК ПРОПУСТИЛ ХОД");
     }
     
+    updateFogOfWar();
+
     if (d.isLast) {
+         // ЕСЛИ ХОД БЫЛ ПОСЛЕДНИМ - ТЕПЕРЬ МОЙ ХОД
+         gameState.playerColor = gameState.myColor;
          turnEndLogic();
          showTurnBanner(true);
     } else if (d.type !== 'build' && d.type !== 'upgrade' && d.type !== 'demolish') {
@@ -105,17 +223,22 @@ export function passTurn() {
     
     gameState.actionsLeft = 0;
     sendNetworkMessage({ type: 'pass', isLast: true });
-    applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+    
+    // ПЕРЕДАЧА ХОДА
+    gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+    
+    applyRegeneration(gameState.myColor === 'w' ? 'b' : 'w'); // Реген врага (визуально, если видим)
     showTurnBanner(false);
+    updateFogOfWar(); 
     updateUI(); render();
 }
 
 export function turnEndLogic() {
     let baseAP = 1; 
-    const hqT1 = hasSpecial(gameState.playerColor, 'hq');
-    const hqT2 = hasSpecial(gameState.playerColor, 'hq_t2');
-    const hqT3 = hasSpecial(gameState.playerColor, 'hq_t3');
-    const hqT4 = hasSpecial(gameState.playerColor, 'hq_t4');
+    const hqT1 = hasSpecial(gameState.myColor, 'hq');
+    const hqT2 = hasSpecial(gameState.myColor, 'hq_t2');
+    const hqT3 = hasSpecial(gameState.myColor, 'hq_t3');
+    const hqT4 = hasSpecial(gameState.myColor, 'hq_t4');
 
     if (hqT1) baseAP = 2; 
     if (hqT2) baseAP = 3; 
@@ -131,7 +254,8 @@ export function turnEndLogic() {
     });
 
     collectResources();
-    applyRegeneration(gameState.playerColor);
+    applyRegeneration(gameState.myColor);
+    updateFogOfWar();
 }
 
 function applyRegeneration(targetColor) {
@@ -230,9 +354,11 @@ export function buildSomething(r, c, type) {
         const isLast = (gameState.actionsLeft<=0 && !gameState.isAdminMode);
         sendNetworkMessage({ type: 'demolish', r, c, isLast: isLast });
         if(isLast) {
-            applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+            gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w'); // Смена хода
+            applyRegeneration(gameState.playerColor);
             showTurnBanner(false);
         }
+        updateFogOfWar();
         updateUI(); render();
         return;
     }
@@ -272,9 +398,11 @@ export function buildSomething(r, c, type) {
         const isLast = (gameState.actionsLeft<=0 && !gameState.isAdminMode);
         sendNetworkMessage({ type: 'upgrade', r, c, newType: type, isLast: isLast });
         if(isLast) {
-            applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+            gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+            applyRegeneration(gameState.playerColor);
             showTurnBanner(false);
         }
+        updateFogOfWar();
         updateUI(); render();
         return;
     }
@@ -298,9 +426,11 @@ export function buildSomething(r, c, type) {
     const isLast = (gameState.actionsLeft<=0 && !gameState.isAdminMode);
     sendNetworkMessage({ type: 'build', r, c, buildType: type, isLast: isLast });
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
+    updateFogOfWar();
     updateUI(); render(); 
 }
 
@@ -383,6 +513,8 @@ function triggerExpansion() {
     gameState.rows = 16; 
     gameState.cols = 8;
     gameState.isExpanded = true;
+    
+    updateFogOfWar();
     recalcBoard(); render(); updateUI();
 
     const boardEl = document.getElementById('board');
@@ -441,11 +573,13 @@ export function recruitPawn() {
     sendNetworkMessage({ type: 'transform', from: {r: target.r, c: target.c}, to: {r: targetR, c: targetC}, newType: 'p', isLast: isLast });
     
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
     
     closeModal('camp-modal');
+    updateFogOfWar();
     updateUI(); render();
 }
 
@@ -476,10 +610,12 @@ export function finishWorkshopBuild(unitType) {
     sendNetworkMessage({ type: 'transform', from: from, to: {r: spawnR, c: spawnC}, newType: 'ram', isLast: isLast });
     
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
     closeModal('workshop-modal');
+    updateFogOfWar();
     updateUI(); render();
 }
 
@@ -503,20 +639,18 @@ export function finishTorpedoBuild() {
     payResources(cost);
     if(!gameState.isAdminMode) gameState.actionsLeft--;
     
-    // ВАЖНО: ИНИЦИАТОР (Пешка или Король) НЕ УДАЛЯЕТСЯ
-    
-    // Создаем торпеду на выходе
     gameState.board[spawnR][spawnC] = { type: 'torpedo', color: gameState.playerColor, moved: true, armor: 10, movedThisTurn: true, rank: 1 };
     
     const isLast = (gameState.actionsLeft <= 0 && !gameState.isAdminMode);
-    // Используем 'build', чтобы просто заспавнить объект
     sendNetworkMessage({ type: 'build', r: spawnR, c: spawnC, buildType: 'torpedo', isLast: isLast });
     
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
     closeModal('torpedo-modal');
+    updateFogOfWar();
     updateUI(); render();
 }
 
@@ -553,10 +687,12 @@ export function finishAcademyRecruit(newType, paperCost) {
     const isLast = (gameState.actionsLeft <= 0 && !gameState.isAdminMode);
     sendNetworkMessage({ type: 'transform', from: from, to: {r:spawnR, c:spawnC}, newType: newType, isLast: isLast });
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
     closeModal('academy-modal');
+    updateFogOfWar();
     updateUI(); render();
 }
 
@@ -668,9 +804,11 @@ export function shootMageTower(targetR, targetC) {
     gameState.pendingInteraction = null;
     
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
+    updateFogOfWar();
     updateUI(); render();
 }
 
@@ -684,10 +822,13 @@ export function finishPromotion(newType) {
     const isLast = (gameState.actionsLeft <= 0 && !gameState.isAdminMode);
     sendNetworkMessage({ type: 'move', from: {r:fr, c:fc}, to: {r:tr, c:tc}, isLast: isLast, win: false, promoteTo: newType });
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
-    gameState.pendingMove = null; updateUI(); render();
+    gameState.pendingMove = null;
+    updateFogOfWar();
+    updateUI(); render();
 }
 
 export function isValidMove(fr, fc, tr, tc) {
@@ -827,7 +968,8 @@ export function movePiece(fr, fc, tr, tc) {
             const isLast = (gameState.actionsLeft<=0 && !gameState.isAdminMode);
             sendNetworkMessage({ type: 'attack_armor', from: {r:fr, c:fc}, r: tr, c: tc, armor: dest.armor, isLast: isLast });
             if(isLast) {
-                applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+                gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+                applyRegeneration(gameState.playerColor);
                 showTurnBanner(false);
             }
             gameState.selectedPiece = null;
@@ -842,7 +984,8 @@ export function movePiece(fr, fc, tr, tc) {
             const isLast = (gameState.actionsLeft<=0 && !gameState.isAdminMode);
             sendNetworkMessage({ type: 'attack_hit', from: {r:fr, c:fc}, r: tr, c: tc, hp: dest.hp, isLast: isLast });
             if(isLast) {
-                applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+                gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+                applyRegeneration(gameState.playerColor);
                 showTurnBanner(false);
             }
             gameState.selectedPiece = null;
@@ -880,10 +1023,12 @@ export function movePiece(fr, fc, tr, tc) {
     });
 
     if(isLast) {
-        applyRegeneration(gameState.playerColor === 'w' ? 'b' : 'w');
+        gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
+        applyRegeneration(gameState.playerColor);
         showTurnBanner(false);
     }
     gameState.selectedPiece = null; 
+    updateFogOfWar();
     updateUI(); render();
 }
 

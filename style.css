@@ -254,16 +254,31 @@ button:active { transform: scale(0.96); }
     .build-group.active { display: flex; }
 }
 
-/* --- МОБИЛЬНАЯ ВЕРСИЯ --- */
+/* --- МОБИЛЬНАЯ ВЕРСИЯ (ИСПРАВЛЕНО) --- */
 @media (max-width: 768px) {
+    :root { --sq-size: 11vw; }
+
+    /* Панель ресурсов возвращена наверх */
+    .ui-container { 
+        position: absolute; 
+        top: 0; 
+        bottom: auto; 
+        background: linear-gradient(to bottom, rgba(0,0,0,0.95), transparent); 
+        padding-bottom: 20px; 
+        padding-top: 5px;
+    }
+
     #build-menu-container {
-        left: 0; top: auto; bottom: 0;
+        position: fixed; /* Фиксировано снизу */
+        bottom: 0;
+        top: auto;
+        left: 0;
         transform: translateY(100%); 
         width: 100%; box-sizing: border-box;
         border-radius: 20px 20px 0 0;
         padding: 10px 0 15px 0; 
         height: auto; 
-        max-height: 38vh;
+        max-height: 40vh; /* Ограничиваем высоту чтобы не улетало вверх */
         background: #151515;
         border: none; border-top: 2px solid var(--accent);
         box-shadow: 0 -5px 30px rgba(0,0,0,0.9);
@@ -314,6 +329,9 @@ button:active { transform: scale(0.96); }
     .build-mode #swipe-zone { display: none; }
     
     .ui { font-size: 0.9em; width: 92%; }
+    
+    /* Плашка хода чуть выше центра, чтобы не мешать */
+    #turn-banner { top: 25%; }
 }
 
 /* --- ДОСКА --- */
@@ -362,7 +380,24 @@ button:active { transform: scale(0.96); }
 .square.light { background-color: var(--sq-light); }
 .square.dark { background-color: var(--sq-dark); }
 
-/* --- ТУМАН --- */
+/* --- ТУМАН ВОЙНЫ (SHROUD) - НОВОЕ --- */
+.square.shroud {
+    background: #080808 !important; 
+    border-color: #111 !important;
+}
+.square.shroud::after {
+    content: "";
+    position: absolute; top:0; left:0; width:100%; height:100%;
+    background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 1px, transparent 0, transparent 50%);
+    background-size: 10px 10px;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 5;
+}
+.square.shroud.legal-move::after { display: none; } /* Скрываем подсветку в тумане */
+.square.shroud.just-built { animation: none; border-color: #333; box-shadow: none; } /* Скрываем постройки врага */
+
+/* --- ТУМАН (Environment Fog) --- */
 .square.fog {
     background-image: 
         linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
@@ -815,13 +850,6 @@ input:focus { border-color: var(--accent); box-shadow: 0 0 15px rgba(241, 196, 1
 .m-res-val.highlight { color: var(--accent); text-shadow: 0 0 5px var(--accent); }
 /* RESPONSIVE */
 @media (max-width: 768px) {
-    :root { --sq-size: 11vw; }
-    #build-menu-container { height: 38vh; }
-    #build-list { flex-wrap: wrap; height: auto; justify-content: center; }
-    .ui-container { position: absolute; bottom: 0; top: auto; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent); padding-bottom: 20px; }
-    #status { font-size: 1em; }
-    #resource-panel { gap: 5px; padding: 5px; }
-    .res-item { font-size: 0.75em; }
     .modal-content { width: 95%; padding: 15px; }
     .promo-btn { padding: 10px; }
     .btn-title { font-size: 0.9em; }
