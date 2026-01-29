@@ -1,4 +1,5 @@
 
+
 export const gameState = {
     db: null,
     gameRef: null,
@@ -27,7 +28,10 @@ export const gameState = {
     
     pendingMove: null,
     pendingInteraction: null, 
-    lastOpponentMove: null, // Последний ход врага (для отрисовки стрелки)
+    
+    // Новое поле для хранения данных о последнем ходе противника
+    lastOpponentMove: null, // { from: {r, c}, to: {r, c}, type: string }
+    
     isTargetingMode: false,
     targetingSource: null
 };

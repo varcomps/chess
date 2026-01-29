@@ -187,6 +187,20 @@ export function render() {
             const isVisible = gameState.visibilityMask[r][c];
             if (!isVisible) {
                 square.classList.add('shroud');
+                // Если клетка в тумане, ход противника НЕ ПОДСВЕЧИВАЕМ (чтобы не палить)
+            } else {
+                // Если клетка видима, проверяем, был ли тут последний ход врага
+                if (gameState.lastOpponentMove) {
+                    const lm = gameState.lastOpponentMove;
+                    // Подсветка "откуда" (для движения/атаки)
+                    if (lm.from && lm.from.r === r && lm.from.c === c) {
+                        square.classList.add('last-move-src');
+                    }
+                    // Подсветка "куда" (для движения/атаки/постройки)
+                    if (lm.to && lm.to.r === r && lm.to.c === c) {
+                        square.classList.add('last-move-dst');
+                    }
+                }
             }
             
             // Подсветка таргетинга (башня мага)
@@ -328,22 +342,33 @@ function updateResourcePanel() {
 }
 
 export function hasSpecial(color, type) { return gameState.board.flat().some(p => p && p.type === type && p.color === color); }
+
 function updateBuildingCounters() {
     if (!gameState.isBuildMode) return;
     document.querySelectorAll('.build-item').forEach(item => {
         const type = item.getAttribute('data-type');
         if (!type || type === 'demolish') return;
+        
         let baseType = type.replace('_t2', '').replace('_t3', '').replace('_t4', '');
+        
         const limit = BUILDING_LIMITS[baseType] || 99;
-        const count = getBuildingCount(baseType);
+        
+        // --- ИСПРАВЛЕНИЕ: Точный подсчет (exact=true) ---
+        const countExact = getBuildingCount(type, true); 
+        
         let counter = item.querySelector('.build-count');
         if (!counter) {
             counter = document.createElement('div'); counter.className = 'build-count'; item.appendChild(counter);
         }
-        counter.innerText = `${count}/${limit}`;
-        if (count >= limit) counter.style.color = '#e74c3c'; else counter.style.color = '#fff';
+        
+        counter.innerText = `${countExact}/${limit}`;
+        
+        // Красный, если лимит СЕМЕЙСТВА исчерпан
+        const totalFamilyCount = getBuildingCount(baseType, false);
+        if (totalFamilyCount >= limit) counter.style.color = '#e74c3c'; else counter.style.color = '#fff';
     });
 }
+
 export function updateUI() {
     const statusEl = document.getElementById('status');
     const hasHQ = hasSpecial(gameState.playerColor, 'hq');
@@ -730,7 +755,6 @@ function getSquareFromPoint(x, y) {
     const visualRow = Math.floor(idx / gameState.cols);
     const c = idx % gameState.cols;
     
-    // ИСПРАВЛЕНИЕ ЛОГИКИ ОПРЕДЕЛЕНИЯ КООРДИНАТ:
     const rangeR = gameState.myColor === 'b' ? [...Array(gameState.rows).keys()].reverse() : [...Array(gameState.rows).keys()];
     const r = rangeR[visualRow];
     

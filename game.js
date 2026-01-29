@@ -1,3 +1,4 @@
+
 import { gameState } from './state.js';
 import { BUILDING_COSTS, BUILDING_LIMITS, FORTRESS_HP, BUILDINGS, PIECE_URLS, BUILDING_ICONS } from './constants.js';
 import { sendNetworkMessage } from './network.js';
@@ -7,7 +8,8 @@ export function initBoard() {
     gameState.playerColor = 'w'; 
     gameState.board = Array(8).fill(null).map(() => Array(8).fill(null));
     gameState.visibilityMask = Array(8).fill(null).map(() => Array(8).fill(true));
-    gameState.isKingInCheck = false; // Новое состояние шаха
+    gameState.isKingInCheck = false; 
+    gameState.lastOpponentMove = null;
     
     gameState.myResources = { wood: 0, stone: 0, metal: 0, cedar: 0, paper: 0, food: 0, gem: 0, coal: 0, polymer: 0, uranium: 0, chemical: 0, mana_gem: 0 };
     gameState.actionsLeft = 1; 
@@ -145,7 +147,6 @@ export function isInCheck(color) {
         for(let c=0; c<gameState.cols; c++) {
             const p = gameState.board[r][c];
             if (p && p.color === enemyColor && !BUILDINGS.includes(p.type)) {
-                // Используем ignoreAP = true, т.к. угроза существует даже без ОД
                 if (isValidMove(r, c, kingPos.r, kingPos.c, true)) {
                     return true;
                 }
@@ -159,14 +160,14 @@ export function isInCheck(color) {
 export function handleData(d) {
     const oppColor = (gameState.myColor === 'w' ? 'b' : 'w'); 
     
-    let moveFrom = null;
-    let moveTo = null;
-    let eventType = d.type;
-
+    // ВАЖНО: Мы НЕ сбрасываем lastOpponentMove, если это просто "pass" (конец хода),
+    // чтобы игрок видел, что произошло перед передачей хода.
+    // Сбрасываем только при поступлении НОВОГО ДЕЙСТВИЯ.
+    if (d.type !== 'pass' && d.type !== 'apogee_trigger') {
+         gameState.lastOpponentMove = null; 
+    }
+    
     if (d.type === 'move') {
-        moveFrom = d.from;
-        moveTo = d.to;
-        
         let movingPiece = gameState.board[d.from.r][d.from.c];
         if (!movingPiece) movingPiece = { type: 'p', color: oppColor, moved: true, armor: 0, rank: 1 };
         
@@ -175,17 +176,17 @@ export function handleData(d) {
         if (d.promoteTo) movingPiece.type = d.promoteTo;
         gameState.board[d.to.r][d.to.c] = movingPiece;
         
+        gameState.lastOpponentMove = { from: d.from, to: d.to, type: 'move' };
+        
         if (d.win) endGame(false);
 
     } else if (d.type === 'attack_hit') {
         if (gameState.board[d.r][d.c]) gameState.board[d.r][d.c].hp = d.hp;
-        moveFrom = d.from;
-        moveTo = {r:d.r, c:d.c};
+        gameState.lastOpponentMove = { from: d.from, to: {r:d.r, c:d.c}, type: 'attack' };
 
     } else if (d.type === 'attack_armor') {
         if (gameState.board[d.r][d.c]) gameState.board[d.r][d.c].armor = d.armor;
-        moveFrom = d.from;
-        moveTo = {r:d.r, c:d.c};
+        gameState.lastOpponentMove = { from: d.from, to: {r:d.r, c:d.c}, type: 'attack' };
 
     } else if (d.type === 'attack_shoot') {
         const target = gameState.board[d.r][d.c];
@@ -195,8 +196,7 @@ export function handleData(d) {
             else gameState.board[d.r][d.c] = null; 
         }
         if (d.from) {
-             moveFrom = d.from;
-             moveTo = {r:d.r, c:d.c};
+             gameState.lastOpponentMove = { from: d.from, to: {r:d.r, c:d.c}, type: 'shoot' };
         }
         
     } else if (d.type === 'transform') {
@@ -205,8 +205,8 @@ export function handleData(d) {
         let newObj = { type: d.newType, color: oppColor, moved: true, armor: 0, rank: isElite ? 2 : 1 };
         if (d.newType === 'ram') newObj.armor = 1;
         gameState.board[d.to.r][d.to.c] = newObj;
-        moveFrom = d.from;
-        moveTo = d.to;
+        
+        gameState.lastOpponentMove = { from: d.from, to: d.to, type: 'transform' };
 
     } else if (d.type === 'build') {
         let obj = { type: d.buildType, color: oppColor };
@@ -221,6 +221,8 @@ export function handleData(d) {
         if (d.buildType === 'torpedo') obj.armor = 10;
         gameState.board[d.r][d.c] = obj;
         
+        gameState.lastOpponentMove = { from: null, to: {r:d.r, c:d.c}, type: 'build' };
+        
     } else if (d.type === 'upgrade') {
         if(gameState.board[d.r][d.c]) {
             gameState.board[d.r][d.c].type = d.newType;
@@ -229,9 +231,11 @@ export function handleData(d) {
             if (d.newType === 'hq_t3') gameState.board[d.r][d.c].armor = 2;
             if (d.newType === 'hq_t4') gameState.board[d.r][d.c].armor = 3;
         }
+        gameState.lastOpponentMove = { from: null, to: {r:d.r, c:d.c}, type: 'upgrade' };
 
     } else if (d.type === 'demolish') {
         gameState.board[d.r][d.c] = null;
+        gameState.lastOpponentMove = { from: null, to: {r:d.r, c:d.c}, type: 'demolish' };
 
     } else if (d.type === 'apogee_trigger') {
         playSlashAnimation();
@@ -239,8 +243,6 @@ export function handleData(d) {
     } 
 
     updateFogOfWar();
-
-    // НЕ ПОКАЗЫВАЕМ СТРЕЛКИ И ВЫДЕЛЕНИЕ (УДАЛЕНО)
     
     // Визуализация снарядов
     if (d.type === 'attack_shoot') {
@@ -254,7 +256,6 @@ export function handleData(d) {
          turnEndLogic();
          showTurnBanner(true); 
          
-         // --- ПРОВЕРКА НА ШАХ ПОСЛЕ ПЕРЕДАЧИ ХОДА ---
          if (isInCheck(gameState.myColor)) {
              gameState.isKingInCheck = true;
              showToast("⚠️ ШАХ! ВАШ КОРОЛЬ ПОД УДАРОМ! ⚠️");
@@ -273,7 +274,7 @@ export function passTurn() {
     if (!gameState.isAdminMode && gameState.playerColor !== gameState.myColor) return;
     
     gameState.actionsLeft = 0;
-    gameState.isKingInCheck = false; // Сброс визуального шаха при передаче
+    gameState.isKingInCheck = false; 
     sendNetworkMessage({ type: 'pass', isLast: true });
     
     gameState.playerColor = (gameState.myColor === 'w' ? 'b' : 'w');
@@ -349,7 +350,7 @@ function applyRegeneration(targetColor) {
 }
 
 export function getMaxResourceLimit() {
-    const warehouses = getBuildingCount('warehouse');
+    const warehouses = getBuildingCount('warehouse'); 
     return 5 + (warehouses * 5); 
 }
 
@@ -479,12 +480,16 @@ export function buildSomething(r, c, type) {
     updateUI(); render(); 
 }
 
-export function getBuildingCount(baseType) {
+export function getBuildingCount(baseType, exact = false) {
     let count = 0;
     gameState.board.flat().forEach(p => {
         if (p && p.color === gameState.myColor) {
             const t = p.type;
-            if (t === baseType || t.startsWith(baseType + '_')) count++;
+            if (exact) {
+                if (t === baseType) count++;
+            } else {
+                if (t === baseType || t.startsWith(baseType + '_')) count++;
+            }
         }
     });
     return count;
@@ -1034,6 +1039,9 @@ export function movePiece(fr, fc, tr, tc) {
     piece.moved = true; 
     piece.movedThisTurn = true; 
 
+    // Сбрасываем отображение последнего хода врага, когда делаем свой
+    gameState.lastOpponentMove = null;
+
     if (costsAP && !gameState.isAdminMode) gameState.actionsLeft--;
     
     const endRow = gameState.playerColor === 'w' ? 0 : (gameState.rows - 1);
@@ -1089,7 +1097,7 @@ export function onPiecePointerDown(e, fr, fc) {
     if (gameState.gameOver || !gameState.currentRoom || (!gameState.isAdminMode && gameState.actionsLeft <= 0)) return;
     
     const p = gameState.board[fr][fc];
-    if (!p || p.color !== gameState.playerColor) {
+    if (!p || p.color !== gameState.myColor) {
         if (gameState.isTargetingMode) {
              const tower = gameState.targetingSource;
              const dist = Math.max(Math.abs(tower.r - fr), Math.abs(tower.c - fc));
@@ -1102,6 +1110,11 @@ export function onPiecePointerDown(e, fr, fc) {
                  render();
              }
         }
+        return;
+    }
+
+    if (!gameState.isAdminMode && gameState.playerColor !== gameState.myColor) {
+        showToast("СЕЙЧАС ХОД ПРОТИВНИКА");
         return;
     }
 
